@@ -47,6 +47,23 @@ const EMPTY_VIEW: OrderBookView = {
   ts: 0,
 }
 
+/** relative qty change required to trigger a row flash animation */
+const FLASH_THRESHOLD = 0.05
+
+/**
+ * Render-side pruning: the store only ever displays `flush(limit)` rows, so
+ * levels beyond ~2x that window are dead weight that would otherwise make
+ * the per-frame sort cost grow for the entire session (slow leak under a
+ * 30-minute soak).
+ */
+function pruneSide(levels: Map<number, number>, keep: number, trigger: number, best: 'asc' | 'desc'): void {
+  if (levels.size <= trigger) return
+  const prices = Array.from(levels.keys()).sort((a, b) => (best === 'asc' ? a - b : b - a))
+  for (let i = keep; i < prices.length; i++) {
+    levels.delete(prices[i]!)
+  }
+}
+
 /**
  * Pure, framework-free order book state for the main thread.
  *
@@ -106,6 +123,9 @@ export class OrderBookStore {
 
     this.seq = lastSeq
     this.ts = lastTs
+    // bound the mirrors: keep 2x the visible window, trigger at 3x
+    pruneSide(this.bids, limit * 2, limit * 3, 'desc')
+    pruneSide(this.asks, limit * 2, limit * 3, 'asc')
     const mid = this.computeMid()
     const spread = mid > 0 ? this.bestAsk() - this.bestBid() : 0
     return {
@@ -176,7 +196,15 @@ export class OrderBookStore {
       const qty = levels.get(price)!
       total += qty
       const before = prevQty.get(price)
-      const dir: 0 | 1 | -1 = before === undefined ? -1 : qty > before ? 1 : qty < before ? -1 : 0
+      let dir: 0 | 1 | -1 = 0
+      if (before === undefined) {
+        dir = 1 // new level in view
+      } else {
+        // only flash on meaningful moves: restarting 40 CSS animations per
+        // frame is itself a long-task vector under burst load
+        const delta = Math.abs(qty - before)
+        if (delta > before * FLASH_THRESHOLD) dir = qty > before ? 1 : -1
+      }
       rows[i] = { price, qty, total, dir }
     }
     // Only the visible window participates in flash tracking; drop the rest

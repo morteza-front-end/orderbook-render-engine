@@ -1,3 +1,4 @@
+import type * as Comlink from 'comlink'
 import type { OrderBookBatch } from '../lib/orderbook/store'
 
 export type FeedKind = 'live' | 'synthetic'
@@ -29,14 +30,24 @@ export interface StartOptions {
   feed: FeedKind
   /** synthetic-only: events per second */
   ratePerSec?: number
-  /** emitted on every coalesced batch (transferred Float64Arrays) */
-  onBatch: (batch: OrderBookBatch) => void
-  onStatus: (msg: StatusMessage) => void
 }
 
-/** Contract exposed through Comlink from `orderbook.worker.ts`. */
+export type BatchHandler = (batch: OrderBookBatch) => void
+export type StatusHandler = (msg: StatusMessage) => void
+
+/**
+ * Contract exposed through Comlink from `orderbook.worker.ts`.
+ *
+ * The callbacks are separate top-level parameters (wrapped with
+ * `Comlink.proxy` by the caller): Comlink's transfer handlers only apply to
+ * direct arguments, never to values nested inside plain option objects.
+ */
 export interface OrderBookWorkerApi {
-  start(opts: StartOptions): Promise<void>
+  start(
+    opts: StartOptions,
+    onBatch: Comlink.ProxyMarked & BatchHandler,
+    onStatus: Comlink.ProxyMarked & StatusHandler,
+  ): Promise<void>
   stop(): Promise<void>
   stats(): Promise<WorkerStats>
 }

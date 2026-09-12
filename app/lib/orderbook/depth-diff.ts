@@ -30,6 +30,15 @@ export interface ApplyResult {
 
 export type LevelMap = Map<number, number>
 
+/**
+ * Per-side level ceiling with hysteresis: the book of record keeps the best
+ * (most relevant) levels and discards dust far from the mid. Without this a
+ * 30-minute stream accumulates tens of thousands of dead far-levels, making
+ * every downstream sort and scan progressively slower (classic slow leak).
+ */
+const MAX_LEVELS_PER_SIDE = 12_000
+const PRUNE_TO_PER_SIDE = 8_000
+
 export class DepthDiffEngine {
   readonly bids: LevelMap = new Map()
   readonly asks: LevelMap = new Map()
@@ -128,6 +137,7 @@ export class DepthDiffEngine {
     }
     this.lastUpdateId = evt.u
     this.lastFinalId = evt.u
+    this.pruneIfNeeded()
     return { applied: true, gap: false }
   }
 
@@ -139,6 +149,23 @@ export class DepthDiffEngine {
     this.lastFinalId = 0
     this.firstEvent = true
     this.synced = false
+  }
+
+  /** Keep only the best `PRUNE_TO_PER_SIDE` levels per side (hysteresis). */
+  private pruneIfNeeded(): void {
+    if (this.bids.size > MAX_LEVELS_PER_SIDE) {
+      this.pruneSide(this.bids, 'desc')
+    }
+    if (this.asks.size > MAX_LEVELS_PER_SIDE) {
+      this.pruneSide(this.asks, 'asc')
+    }
+  }
+
+  private pruneSide(side: LevelMap, best: 'asc' | 'desc'): void {
+    const prices = Array.from(side.keys()).sort((a, b) => (best === 'asc' ? a - b : b - a))
+    for (let i = PRUNE_TO_PER_SIDE; i < prices.length; i++) {
+      side.delete(prices[i]!)
+    }
   }
 
   private fail(reason: string): void {

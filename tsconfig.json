@@ -1,7 +1,9 @@
 {
+  "compilerOptions": {
+    "strict": true,
+    "noUncheckedIndexedAccess": true
+  },
   // https://nuxt.com/docs/guide/concepts/typescript
-  "strict": true,
-  "noUncheckedIndexedAccess": true,
   "files": [],
   "references": [
     {

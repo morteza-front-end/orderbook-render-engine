@@ -1,4 +1,4 @@
-import { shallowRef, onScopeDispose, readonly } from 'vue'
+import { shallowRef, onScopeDispose, type ShallowRef } from 'vue'
 import * as Comlink from 'comlink'
 import { OrderBookStore, type OrderBookBatch, type OrderBookView } from '../lib/orderbook/store'
 import { RingBuffer } from '../lib/ring-buffer'
@@ -17,7 +17,7 @@ export interface FeedOptions {
 
 export interface OrderbookFeed {
   /** replaced (not mutated) at most once per frame — consume via shallowRef */
-  view: Readonly<ReturnType<typeof shallowRef<OrderBookView>>>
+  view: ShallowRef<OrderBookView>
   start(): Promise<void>
   restart(opts: FeedOptions): Promise<void>
   setPaused(paused: boolean): void
@@ -136,16 +136,13 @@ export function useOrderbookFeed(): OrderbookFeed {
 
   async function launch(opts: FeedOptions): Promise<void> {
     if (!api) return
-    await api.start({
-      symbol: opts.symbol,
-      feed: opts.feed,
-      ratePerSec: opts.ratePerSec,
-      onBatch: Comlink.proxy(onBatch),
-      onStatus: Comlink.proxy(onStatus),
-    })
+    // callbacks MUST be top-level Comlink.proxy arguments — see protocol.ts
+    await api.start(opts, Comlink.proxy(onBatch as Comlink.ProxyMarked), Comlink.proxy(onStatus as Comlink.ProxyMarked))
   }
 
   function spawnWorker(): void {
+    // SSR safety: the worker data plane only exists in the browser
+    if (typeof Worker === 'undefined') return
     disposeWorker()
     worker = new Worker(new URL('../workers/orderbook.worker.ts', import.meta.url), {
       type: 'module',
@@ -213,7 +210,7 @@ export function useOrderbookFeed(): OrderbookFeed {
   onScopeDispose(dispose)
 
   return {
-    view: readonly(view),
+    view,
     start,
     restart,
     setPaused,

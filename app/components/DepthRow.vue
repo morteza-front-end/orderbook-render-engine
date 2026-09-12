@@ -88,15 +88,25 @@ const flash = computed(() => (props.row.dir === 0 ? '' : props.row.dir > 0 ? 'up
   z-index: 0;
   pointer-events: none;
 }
+/* flash color follows side semantics: added bid liquidity = green,
+   added ask liquidity = red */
 .obrow-flash.up {
-  animation: flash-up 260ms ease-out;
+  animation: flash-up 240ms ease-out;
 }
 .obrow-flash.down {
-  animation: flash-down 260ms ease-out;
+  animation: flash-down 240ms ease-out;
+}
+.obrow.bid .obrow-flash.up,
+.obrow.ask .obrow-flash.down {
+  --flash: rgba(38, 166, 154, 0.22);
+}
+.obrow.ask .obrow-flash.up,
+.obrow.bid .obrow-flash.down {
+  --flash: rgba(239, 83, 80, 0.22);
 }
 @keyframes flash-up {
   from {
-    background: rgba(38, 166, 154, 0.22);
+    background: var(--flash);
   }
   to {
     background: transparent;
@@ -104,7 +114,7 @@ const flash = computed(() => (props.row.dir === 0 ? '' : props.row.dir > 0 ? 'up
 }
 @keyframes flash-down {
   from {
-    background: rgba(239, 83, 80, 0.22);
+    background: var(--flash);
   }
   to {
     background: transparent;

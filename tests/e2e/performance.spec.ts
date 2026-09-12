@@ -40,8 +40,8 @@ const LONG_TASK_BUDGET_MS = 50
 async function readSeq(page: Page): Promise<number> {
   return page.evaluate(() => {
     const el = document.querySelector<HTMLElement>('[data-testid="stats"]')
-    const m = el?.textContent?.match(/seq\\s+([\\d,]+)/)
-    return m ? Number(m[1].replace(/,/g, '')) : -1
+    const m = el?.textContent?.match(/seq\s*([\d,.]+)/)
+    return m ? Number(m[1]!.replace(/[,.]/g, '')) : -1
   })
 }
 
@@ -49,6 +49,9 @@ test('INP stays under 200ms and main-thread tasks under 50ms under data pressure
   const errors: string[] = []
   page.on('pageerror', (err) => errors.push(String(err)))
 
+  // single-worker config + explicit focus: rAF must never be throttled
+  // while we measure interaction latency
+  await page.bringToFront()
   await page.addInitScript(PERF_INIT)
   await page.goto('/?feed=synthetic&rate=100')
 
@@ -67,18 +70,27 @@ test('INP stays under 200ms and main-thread tasks under 50ms under data pressure
   const rowCount = await rows.count()
   expect(rowCount).toBeGreaterThan(10)
 
-  // interaction mix: row clicks (state -> re-render), list scrolling,
-  // control clicks — continuously while 100 events/s flow through the pipe
+  // interaction mix: raw clicks on the tape (trusted events through the real
+  // row handlers), list scrolling and control toggles — continuously while
+  // 100 events/s flow through the pipeline. Raw coordinate clicks avoid
+  // Playwright's actionability retries, which cannot settle on rows that
+  // legitimately change every frame.
+  const tape = await page.getByTestId('bids-side').locator('.vl').boundingBox()
+  expect(tape).not.toBeNull()
+
   const deadline = Date.now() + MEASURE_MS
   let i = 0
   while (Date.now() < deadline) {
-    await rows.nth(i++ % rowCount).click()
+    const x = tape!.x + Math.random() * tape!.width
+    const y = tape!.y + 8 + Math.random() * (tape!.height - 16)
+    await page.mouse.click(x, y)
     await page.mouse.wheel(0, 60)
     if (i % 5 === 0) {
       await page.getByTestId('pause-btn').click()
       await page.getByTestId('pause-btn').click()
     }
     await page.waitForTimeout(120)
+    i++
   }
 
   const windowEnd = await page.evaluate(() => performance.now())

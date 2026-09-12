@@ -14,7 +14,9 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
-  workers: process.env.CI ? 1 : undefined,
+  // serial execution: parallel pages contend for CPU and background pages
+  // get their rAF throttled, which would poison the performance measurements
+  workers: 1,
   reporter: process.env.CI ? [['html', { open: 'never' }], ['github'], ['list']] : [['list']],
   use: {
     baseURL: `http://127.0.0.1:${PORT}`,
@@ -30,12 +32,30 @@ export default defineConfig({
   projects: [
     {
       name: 'e2e',
-      use: { ...devices['Desktop Chrome'] },
+      use: {
+        ...devices['Desktop Chrome'],
+        launchOptions: {
+          args: [
+            '--disable-background-timer-throttling',
+            '--disable-backgrounding-occluded-windows',
+            '--disable-renderer-backgrounding',
+          ],
+        },
+      },
       testIgnore: /soak\.spec\.ts/,
     },
     {
       name: 'soak',
-      use: { ...devices['Desktop Chrome'] },
+      use: {
+        ...devices['Desktop Chrome'],
+        launchOptions: {
+          args: [
+            '--disable-background-timer-throttling',
+            '--disable-backgrounding-occluded-windows',
+            '--disable-renderer-backgrounding',
+          ],
+        },
+      },
       testMatch: /soak\.spec\.ts/,
     },
   ],

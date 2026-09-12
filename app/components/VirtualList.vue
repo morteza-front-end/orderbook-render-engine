@@ -1,4 +1,4 @@
-<script setup lang="ts">
+<script setup lang="ts" generic="T extends { price: number }">
 import { computed, onMounted, ref } from 'vue'
 
 /**
@@ -14,7 +14,7 @@ import { computed, onMounted, ref } from 'vue'
  */
 const props = withDefaults(
   defineProps<{
-    rows: { price: number }[]
+    rows: T[]
     rowHeight: number
     height: number
     overscan?: number

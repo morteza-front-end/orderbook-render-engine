@@ -26,12 +26,14 @@ const mid = computed(() => (view.value.mid > 0 ? fmt2.format(view.value.mid) : '
 const spread = computed(() => (view.value.spread > 0 ? fmt2.format(view.value.spread) : '—'))
 
 // deep-linkable configuration: /?feed=synthetic&rate=100
+// the feed only starts in the browser (Web Worker data plane, no SSR)
 onMounted(() => {
   const q = new URLSearchParams(window.location.search)
   const feedParam = q.get('feed')
   if (feedParam === 'live' || feedParam === 'synthetic') session.setFeed(feedParam)
   const rate = Number(q.get('rate'))
   if (Number.isFinite(rate) && rate >= 1 && rate <= 1000) session.rate = rate
+  void feed.start()
 })
 
 // user intent -> engine (both directions wired through stores/composable)
@@ -50,8 +52,6 @@ watch(
 function onRowClick(price: number): void {
   session.select(price)
 }
-
-void feed.start()
 </script>
 
 <template>
@@ -105,7 +105,7 @@ void feed.start()
     </div>
 
     <div class="lists">
-      <div class="side">
+      <div class="side" data-testid="asks-side">
         <div class="side-title ask">Asks</div>
         <!-- asks scroll reversed so the best ask sits next to the mid -->
         <VirtualList
@@ -131,7 +131,7 @@ void feed.start()
         <span class="mid-spread">spread {{ spread }}</span>
       </div>
 
-      <div class="side">
+      <div class="side" data-testid="bids-side">
         <div class="side-title bid">Bids</div>
         <VirtualList
           :rows="view.bids"

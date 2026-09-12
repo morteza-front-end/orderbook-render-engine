@@ -56,34 +56,39 @@ test('pause freezes the tape, resume continues it', async ({ page }) => {
   await page.goto('/?feed=synthetic')
   await waitForLive(page)
 
+  // tape = the rendered view (rAF flush). While paused, the worker keeps
+  // consuming the feed but the view must stop changing entirely.
+  const bids = page.getByTestId('bids-side').locator('.vl-row .price')
+  await expect(bids.first()).toBeVisible()
+
   await page.getByTestId('pause-btn').click()
   await expect(page.getByTestId('pause-btn')).toHaveText('Resume')
+  await page.waitForTimeout(300) // let any in-flight frame land
 
-  const readSeq = async () =>
-    Number(
-      (await page.getByTestId('stats').innerText())
-        .split('seq')[1]!
-        .trim()
-        .split(/\s+/)[0]!
-        .replace(/\D/g, ''),
-    )
-  const frozen = await readSeq()
+  const frozen = await bids.first().innerText()
   await page.waitForTimeout(1500)
-  expect(await readSeq()).toBe(frozen)
+  expect(await bids.first().innerText()).toBe(frozen)
 
   await page.getByTestId('pause-btn').click()
   await expect(page.getByTestId('pause-btn')).toHaveText('Pause')
-  await page.waitForTimeout(1500)
-  expect(await readSeq()).toBeGreaterThan(frozen)
+  // with the tape resumed the best bid changes within a couple of seconds
+  await expect
+    .poll(async () => bids.first().innerText(), { timeout: 5000 })
+    .not.toBe(frozen)
 })
 
 test('clicking a row selects it (interaction wiring through Pinia session store)', async ({ page }) => {
   await page.goto('/?feed=synthetic')
   await waitForLive(page)
 
-  const row = page.locator('.vl-row').first()
+  // freeze the tape first so the clicked row cannot be replaced mid-click
+  await page.getByTestId('pause-btn').click()
+  await expect(page.getByTestId('pause-btn')).toHaveText('Resume')
+
+  const row = page.getByTestId('bids-side').locator('.vl-row').nth(10)
   await row.click()
-  await expect(row.locator('.obrow.selected')).toBeVisible()
+  await expect(page.locator('.obrow.selected')).toBeVisible()
+  await expect(page.locator('.obrow.selected')).toHaveCount(1)
 })
 
 test('switching to another symbol resets and rebuilds the book', async ({ page }) => {

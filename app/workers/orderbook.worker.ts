@@ -2,7 +2,7 @@
 import * as Comlink from 'comlink'
 import { DepthDiffEngine, type DepthEvent } from '../lib/orderbook/depth-diff'
 import { SyntheticFeed } from './feed/synthetic'
-import type { OrderBookWorkerApi, StartOptions, StatusMessage, WorkerStats, FeedKind } from './protocol'
+import type { OrderBookWorkerApi, StartOptions, StatusMessage, WorkerStats, FeedKind, BatchHandler, StatusHandler } from './protocol'
 import type { OrderBookBatch } from '../lib/orderbook/store'
 
 const BINANCE_WS = 'wss://stream.binance.com:9443/ws'
@@ -47,13 +47,17 @@ class OrderBookWorker implements OrderBookWorkerApi {
     }
   }
 
-  async start(opts: StartOptions): Promise<void> {
+  async start(
+    opts: StartOptions,
+    onBatch: BatchHandler,
+    onStatus: StatusHandler,
+  ): Promise<void> {
     await this.stop()
     this.stopping = false
     this.feed = opts.feed
     this.symbol = opts.symbol.toLowerCase()
-    this.onBatch = opts.onBatch
-    this.onStatus = opts.onStatus
+    this.onBatch = onBatch
+    this.onStatus = onStatus
     this.engine.reset()
 
     this.postTimer = setInterval(() => this.flushBatch(), MIN_POST_INTERVAL_MS)

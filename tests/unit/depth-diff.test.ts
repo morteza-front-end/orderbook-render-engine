@@ -18,9 +18,9 @@ describe('DepthDiffEngine (Binance diff protocol)', () => {
 
     e.sync(snapshot(1000, [[100, 5]], [[101, 5]]))
     expect(e.isSynced).toBe(true)
-    // buffered event with u <= lastUpdateId is dropped per spec
     expect(e.bids.get(100)).toBe(5)
-    expect(e.sequence).toBe(1000)
+    // the buffered event straddles lastUpdateId (U<=1001<=u) and is applied
+    expect(e.sequence).toBe(1001)
   })
 
   it('drops events where u <= lastUpdateId', () => {
@@ -70,6 +70,19 @@ describe('DepthDiffEngine (Binance diff protocol)', () => {
     const r = e.apply(evt(2100, 2110, 2099))
     expect(r.gap).toBe(true)
     expect(onGap).toHaveBeenCalledOnce()
+  })
+
+  it('prunes far levels with hysteresis so the book stays bounded', () => {
+    const e = new DepthDiffEngine()
+    e.sync(snapshot(1000, [[100, 1]], [[101, 1]]))
+    const bids: [number, number][] = []
+    for (let i = 0; i < 13_000; i++) bids.push([100 - i * 0.01, 1])
+    const r = e.apply(evt(1001, 1002, 1000, bids, []))
+    expect(r.applied).toBe(true)
+    expect(e.bids.size).toBeLessThanOrEqual(12_000)
+    expect(e.bids.size).toBeGreaterThanOrEqual(8_000)
+    // best levels always survive pruning
+    expect(e.bids.has(100)).toBe(true)
   })
 
   it('reset clears everything', () => {
