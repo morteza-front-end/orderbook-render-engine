@@ -1,0 +1,60 @@
+name: Soak
+
+# 30-minute memory-leak soak: keeps a 100 events/s feed open in a real
+# Chromium heap and fails on monotonic growth or DOM inflation.
+# Artifacts (heap timeline JSON + report) feed the stability evidence
+# section of docs/ARCHITECTURE.md.
+
+on:
+  schedule:
+    - cron: '0 3 * * *' # nightly
+  workflow_dispatch:
+    inputs:
+      duration_minutes:
+        description: 'Soak duration in minutes'
+        required: false
+        default: '30'
+
+concurrency:
+  group: soak
+  cancel-in-progress: true
+
+jobs:
+  browser-soak:
+    name: Browser heap soak (30 min)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:soak
+        env:
+          CI: 'true'
+          SOAK_DURATION_MS: ${{ github.event.inputs.duration_minutes && (github.event.inputs.duration_minutes * 60000) || 1800000 }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: soak-report
+          path: playwright-report/
+          retention-days: 30
+
+  engine-soak:
+    name: Diff engine soak (30 min)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run test:soak:unit
+        env:
+          RUN_SOAK: '1'
+          SOAK_DURATION_MS: ${{ github.event.inputs.duration_minutes && (github.event.inputs.duration_minutes * 60000) || 1800000 }}

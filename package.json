@@ -7,11 +7,31 @@
     "dev": "nuxt dev",
     "generate": "nuxt generate",
     "preview": "nuxt preview",
-    "postinstall": "nuxt prepare"
+    "postinstall": "nuxt prepare",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "typecheck": "nuxt typecheck",
+    "test:unit": "vitest run",
+    "test:unit:watch": "vitest",
+    "test:e2e": "playwright test --project=e2e",
+    "test:soak": "playwright test --project=soak",
+    "test:soak:unit": "vitest run tests/unit/soak.test.ts",
+    "ci": "npm run lint && npm run typecheck && npm run test:unit && npm run test:e2e"
   },
   "dependencies": {
+    "@pinia/nuxt": "^1.0.2",
+    "comlink": "^4.4.2",
     "nuxt": "^4.5.2",
+    "pinia": "^4.0.3",
     "vue": "^3.5.42",
     "vue-router": "^5.3.1"
+  },
+  "devDependencies": {
+    "@nuxt/eslint": "^1.17.0",
+    "@playwright/test": "^1.63.0",
+    "eslint": "^10.10.0",
+    "typescript": "^6.0.3",
+    "vitest": "^5.0.0",
+    "vue-tsc": "^3.3.11"
   }
 }
