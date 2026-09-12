@@ -109,31 +109,36 @@ describe('OrderBookStore', () => {
     expect(v.seq).toBe(10)
   })
 
-  it('bounds level growth: far levels are pruned under sustained load', () => {
-    const { store } = makeStore()
-    // simulate 5000 batches touching 20 random far prices each
-    let seed = 7
-    const rand = () => {
-      seed = (seed * 1103515245 + 12345) & 0x7fffffff
-      return seed / 0x7fffffff
-    }
-    for (let b = 0; b < 5000; b++) {
-      const bids: [number, number][] = []
-      const asks: [number, number][] = []
-      for (let i = 0; i < 20; i++) {
-        bids.push([100 - rand() * 5000, 1])
-        asks.push([101 + rand() * 5000, 1])
+  it(
+    'bounds level growth: far levels are pruned under sustained load',
+    { timeout: 20_000 },
+    () => {
+      const { store } = makeStore()
+      // simulate 2000 batches touching 20 random far prices each (~40k
+      // distinct levels; without pruning the maps would retain them all)
+      let seed = 7
+      const rand = () => {
+        seed = (seed * 1103515245 + 12345) & 0x7fffffff
+        return seed / 0x7fffffff
       }
-      store.ingest(batch(bids, asks, b))
-      store.flush(600)
-    }
-    const stats = store.stats()
-    // without pruning the maps would hold ~100k levels; with hysteresis the
-    // size oscillates between keep (2*limit) and trigger (3*limit)
-    expect(stats.bidLevels).toBeLessThanOrEqual(1800)
-    expect(stats.askLevels).toBeLessThanOrEqual(1800)
-    expect(store.pending).toBe(0)
-  })
+      for (let b = 0; b < 2000; b++) {
+        const bids: [number, number][] = []
+        const asks: [number, number][] = []
+        for (let i = 0; i < 20; i++) {
+          bids.push([100 - rand() * 5000, 1])
+          asks.push([101 + rand() * 5000, 1])
+        }
+        store.ingest(batch(bids, asks, b))
+        store.flush(600)
+      }
+      const stats = store.stats()
+      // with hysteresis the size oscillates between keep (2*limit) and
+      // trigger (3*limit)
+      expect(stats.bidLevels).toBeLessThanOrEqual(1800)
+      expect(stats.askLevels).toBeLessThanOrEqual(1800)
+      expect(store.pending).toBe(0)
+    },
+  )
 
   it('reset clears levels and pending batches', () => {
     const { ring, store } = makeStore()

@@ -137,7 +137,11 @@ export function useOrderbookFeed(): OrderbookFeed {
   async function launch(opts: FeedOptions): Promise<void> {
     if (!api) return
     // callbacks MUST be top-level Comlink.proxy arguments — see protocol.ts
-    await api.start(opts, Comlink.proxy(onBatch as Comlink.ProxyMarked), Comlink.proxy(onStatus as Comlink.ProxyMarked))
+    await api.start(
+      opts,
+      Comlink.proxy(onBatch as unknown as Comlink.ProxyMarked),
+      Comlink.proxy(onStatus as unknown as Comlink.ProxyMarked),
+    )
   }
 
   function spawnWorker(): void {

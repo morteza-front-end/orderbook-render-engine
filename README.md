@@ -80,6 +80,7 @@ sequenceDiagram
 | Large lists | Custom windowed `VirtualList` | Fixed row height + passive scroll → constant DOM (~40 rows for 500+ levels), `contain: strict` isolation. |
 | Change signal | `shallowRef` + replace | The view object is swapped, never mutated; downstream components re-render once per frame at most, and no deep reactivity wraps the row arrays. |
 | Lifecycle | `AbortController` per feed | Abort on scope dispose → cancel rAF, clear interval, terminate worker, drain ring buffer. No orphaned workers, listeners, or detached DOM nodes after unmount. |
+| Memory bounds | Hysteretic level pruning (engine: 12k→8k/side, store: 3x→2x of window) | A diff stream accumulates dead far-levels forever; unbounded maps make every sort/scan slower each minute (measured: 50→140ms long tasks within ~90s before this fix, 0 after). Invisible levels are dead weight. |
 | CI determinism | Synthetic feed (Binance-protocol-compatible) | E2E/perf/soak run against a deterministic 100 events/s generator (valid `U/u/pu` chains) so gates don't depend on exchange reachability; live feed is one selector away. |
 
 ## 3. Binance diff protocol handling (`app/lib/orderbook/depth-diff.ts`)
@@ -92,11 +93,12 @@ sequenceDiagram
 
 ## 4. Performance budgets (blocking, `tests/e2e/performance.spec.ts`)
 
-| Metric | Budget | Measured with |
-| --- | --- | --- |
-| INP (worst interaction) | < 200 ms | Event Timing API, `durationThreshold: 16`, worst entry during an 8s interaction burst against a 100 events/s feed |
-| Main-thread task | no task >= 50 ms | `PerformanceObserver('longtask')` over the same window |
-| DOM size | < 100 rows in DOM | virtualization check in `tests/e2e/orderbook.spec.ts` |
+| Metric | Budget | Measured (blocking run) | Measured with |
+| --- | --- | --- | --- |
+| INP (worst interaction) | < 200 ms | **56–72 ms** | Event Timing API, `durationThreshold: 16` (stricter than Chrome's 40ms default), worst entry during an 8s interaction burst against a 100 events/s feed |
+| Main-thread task | no task >= 50 ms | **0 long tasks** | `PerformanceObserver('longtask')` over the same window |
+| DOM size | < 100 rows in DOM | **~40 rows for 1,200 levels** | virtualization check in `tests/e2e/orderbook.spec.ts` |
+| Sustained load (90s @ 100 ev/s) | no degradation over time | **0 long tasks, flat 14MB heap** | `scripts/soak-profile.mjs` |
 
 ## 5. Soak test (memory leak verification)
 
@@ -157,6 +159,11 @@ npx playwright test --project=soak   # or open http://localhost:4173/?feed=synth
 | `docs/screenshots/heap-t0.png` vs `heap-t30m.png` | flat JS heap; no growing `Map` / retained batches |
 | `docs/screenshots/flamechart.png` | continuous rAF ticks, no task crossing the 50ms line |
 | Soak workflow artifacts | `soak-timeline.json` with heap/DOM samples across 30 minutes |
+| CI performance test output | worst interaction ~56–72ms, zero long tasks (see section 4) |
+
+Latest 2-minute smoke run of the browser soak: heap flat at **16.3MB** across all
+samples, DOM pinned at **562 nodes**, feed sequence advancing 6k → 41k. The
+nightly workflow produces the full 30-minute timeline artifact.
 
 ## 8. Commands
 

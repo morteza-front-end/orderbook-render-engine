@@ -55,9 +55,10 @@ test(`soak: ${Math.round(DURATION_MS / 60000)}min open feed shows no memory leak
         seq: m ? Number(m[1].replace(/,/g, '')) : -1,
       }
     })
-    samples.push({ t: Date.now() - started, ...s })
+    const sample: Sample = { t: Date.now() - started, ...s }
+    samples.push(sample)
     console.log(
-      `t+${Math.round(s.t / 1000)}s heap=${s.heapMb.toFixed(1)}MB nodes=${s.nodes} seq=${s.seq}`,
+      `t+${Math.round(sample.t / 1000)}s heap=${sample.heapMb.toFixed(1)}MB nodes=${sample.nodes} seq=${sample.seq}`,
     )
   }
 

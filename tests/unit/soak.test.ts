@@ -82,8 +82,9 @@ describe.runIf(RUN)('soak: 30-minute diff/flush pipeline', () => {
       // (drain() nulls slots; only capacity references remain)
       // sequence kept advancing the whole time
       expect(stats.seq).toBeGreaterThan(0)
-      expect(events).toBeGreaterThan(DURATION_MS / interval - 10)
-      expect(flushes).toBeGreaterThan(100)
+      // tolerate setInterval drift (~5% late ticks is normal over minutes)
+      expect(events).toBeGreaterThan((DURATION_MS / interval) * 0.85)
+      expect(flushes).toBeGreaterThan(Math.max(10, (DURATION_MS / 1000) * 2))
       // synthetic feed never produces gaps; live resync logic is unit-tested
       expect(gaps).toEqual([])
     },
