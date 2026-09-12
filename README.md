@@ -134,6 +134,7 @@ app/
 tests/
   unit/                  # ring buffer, diff protocol, store, engine soak
   e2e/                   # functional, performance (INP/longtask), memory soak
+scripts/                 # local diagnostics (debug console, cost bisection, sustained census)
 .github/workflows/       # ci.yml (4 blocking gates), soak.yml (nightly)
 ```
 

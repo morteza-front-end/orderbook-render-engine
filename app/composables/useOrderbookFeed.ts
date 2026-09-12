@@ -2,7 +2,7 @@ import { shallowRef, onScopeDispose, type ShallowRef } from 'vue'
 import * as Comlink from 'comlink'
 import { OrderBookStore, type OrderBookBatch, type OrderBookView } from '../lib/orderbook/store'
 import { RingBuffer } from '../lib/ring-buffer'
-import type { OrderBookWorkerApi, StatusMessage, FeedKind } from '../workers/protocol'
+import type { OrderBookWorkerApi, StatusMessage, FeedKind, BatchHandler, StatusHandler } from '../workers/protocol'
 import { useSessionStore } from '../stores/session'
 
 const RING_CAPACITY = 512 // power of two; ~5s of 100Hz burst before overwrite
@@ -139,8 +139,8 @@ export function useOrderbookFeed(): OrderbookFeed {
     // callbacks MUST be top-level Comlink.proxy arguments — see protocol.ts
     await api.start(
       opts,
-      Comlink.proxy(onBatch as unknown as Comlink.ProxyMarked),
-      Comlink.proxy(onStatus as unknown as Comlink.ProxyMarked),
+      Comlink.proxy(onBatch as unknown as Comlink.ProxyMarked & BatchHandler),
+      Comlink.proxy(onStatus as unknown as Comlink.ProxyMarked & StatusHandler),
     )
   }
 

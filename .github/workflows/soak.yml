@@ -3,7 +3,7 @@ name: Soak
 # 30-minute memory-leak soak: keeps a 100 events/s feed open in a real
 # Chromium heap and fails on monotonic growth or DOM inflation.
 # Artifacts (heap timeline JSON + report) feed the stability evidence
-# section of docs/ARCHITECTURE.md.
+# section of README.md.
 
 on:
   schedule:

@@ -32,7 +32,7 @@ const PERF_INIT = `
   })();
 `
 
-const WARMUP_MS = 4000
+const WARMUP_MS = 6000
 const MEASURE_MS = 8000
 const INP_BUDGET_MS = 200
 const LONG_TASK_BUDGET_MS = 50

@@ -80,6 +80,10 @@ export class OrderBookStore {
   private readonly asks = new Map<number, number>()
   private readonly prevBidQty = new Map<number, number>()
   private readonly prevAskQty = new Map<number, number>()
+  /** reused row objects: 100Hz x 60fps without pooling means ~72k
+   * allocations/s and GC pressure that shows up as 50ms+ main-thread tasks */
+  private readonly bidRows: DepthRow[] = []
+  private readonly askRows: DepthRow[] = []
   private seq = 0
   private ts = 0
 
@@ -129,8 +133,8 @@ export class OrderBookStore {
     const mid = this.computeMid()
     const spread = mid > 0 ? this.bestAsk() - this.bestBid() : 0
     return {
-      bids: this.snapshotSide(this.bids, this.prevBidQty, limit, 'desc'),
-      asks: this.snapshotSide(this.asks, this.prevAskQty, limit, 'asc'),
+      bids: this.snapshotSide(this.bids, this.prevBidQty, this.bidRows, limit, 'desc'),
+      asks: this.snapshotSide(this.asks, this.prevAskQty, this.askRows, limit, 'asc'),
       mid,
       spread,
       seq: lastSeq,
@@ -143,6 +147,8 @@ export class OrderBookStore {
     this.asks.clear()
     this.prevBidQty.clear()
     this.prevAskQty.clear()
+    this.bidRows.length = 0
+    this.askRows.length = 0
     this.seq = 0
     this.ts = 0
     this.buffer.clear()
@@ -180,16 +186,21 @@ export class OrderBookStore {
     return (bid + ask) / 2
   }
 
+  /**
+   * Builds the sorted, windowed snapshot for one side.
+   * `pool` holds the row objects returned last frame — they are mutated in
+   * place so a steady-state render loop performs zero row allocations.
+   */
   private snapshotSide(
     levels: Map<number, number>,
     prevQty: Map<number, number>,
+    pool: DepthRow[],
     limit: number,
     order: 'asc' | 'desc',
   ): DepthRow[] {
     const prices = Array.from(levels.keys())
     prices.sort((a, b) => (order === 'asc' ? a - b : b - a))
     const n = Math.min(limit, prices.length)
-    const rows: DepthRow[] = new Array(n)
     let total = 0
     for (let i = 0; i < n; i++) {
       const price = prices[i]!
@@ -205,14 +216,23 @@ export class OrderBookStore {
         const delta = Math.abs(qty - before)
         if (delta > before * FLASH_THRESHOLD) dir = qty > before ? 1 : -1
       }
-      rows[i] = { price, qty, total, dir }
+      const row = pool[i]
+      if (row) {
+        row.price = price
+        row.qty = qty
+        row.total = total
+        row.dir = dir
+      } else {
+        pool[i] = { price, qty, total, dir }
+      }
     }
+    pool.length = n
     // Only the visible window participates in flash tracking; drop the rest
     // so the map cannot grow unbounded across a 30-minute soak.
     prevQty.clear()
     for (let i = 0; i < n; i++) {
-      prevQty.set(prices[i]!, rows[i]!.qty)
+      prevQty.set(prices[i]!, pool[i]!.qty)
     }
-    return rows
+    return pool
   }
 }
