@@ -33,7 +33,7 @@ const result = await page.evaluate(async (durationMs) => {
   })
   obs.observe({ type: 'longtask' })
 
-  const tape = document.querySelector('[data-testid="bids-side"] .vl')
+  const tape = document.querySelector('[data-testid="bids-scroll"]')
   const box = tape?.getBoundingClientRect()
   const end = Date.now() + durationMs
   let clicks = 0

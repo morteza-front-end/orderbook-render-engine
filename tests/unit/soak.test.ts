@@ -1,101 +1,86 @@
 import { describe, expect, it } from 'vitest'
 import { DepthDiffEngine } from '../../app/lib/orderbook/depth-diff'
-import { OrderBookStore, type OrderBookBatch } from '../../app/lib/orderbook/store'
-import { RingBuffer } from '../../app/lib/ring-buffer'
-import { SyntheticFeed } from '../../app/workers/feed/synthetic'
+import { buildView, parseFrame, ROW_STRIDE } from '../../app/lib/orderbook/frames'
+import { SyntheticFeed } from '../../app/lib/orderbook/synthetic'
 
 /**
- * Node-side soak: replays the full pipeline (synthetic feed -> diff engine ->
- * ring buffer -> store flush) for SOAK_DURATION_MS (default 30 minutes) and
- * asserts the data structures stay bounded — the classic leak vectors here
- * are unbounded level maps, an ever-growing pending queue, or retained batch
- * references after drain.
+ * Node-side soak: replays the full pipeline exactly as it runs in the
+ * browser (raw frames -> parse -> diff engine -> view build) for
+ * SOAK_DURATION_MS (default 30 minutes) and asserts the data structures
+ * stay bounded — the classic leak vectors are unbounded level maps, a
+ * growing pending queue, or unbounded flash-tracking maps.
  *
- * Opt-in: `npm run test:soak:unit` (or RUN_SOAK=1). Skipped in the normal
+ * Opt-in: `npm run test:soak:unit` (RUN_SOAK=1). Skipped in the normal
  * unit run so CI stays fast; the browser heap soak lives in
  * `tests/e2e/soak.spec.ts`.
  */
 const RUN = !!process.env.RUN_SOAK
 const DURATION_MS = Number(process.env.SOAK_DURATION_MS ?? 30 * 60 * 1000)
 
-describe.runIf(RUN)('soak: 30-minute diff/flush pipeline', () => {
+describe.runIf(RUN)('soak: raw pipeline diff/view loop', () => {
   it(
-    'keeps memory and data structures bounded under continuous load',
+    'keeps the engine bounded under continuous raw load',
     { timeout: DURATION_MS + 60_000 },
     async () => {
-      const feed = new SyntheticFeed({ symbol: 'btcusdt', ratePerSec: 10 })
+      const feed = new SyntheticFeed('btcusdt', 10)
       const engine = new DepthDiffEngine()
-      engine.sync(feed.snapshot())
-
-      const ring = new RingBuffer<OrderBookBatch>(512)
-      const store = new OrderBookStore(ring)
-
       const gaps: string[] = []
       engine.onGap = (reason) => {
         gaps.push(reason)
-        engine.sync(feed.snapshot())
+        const snap = parseFrame(feed.snapshotRaw())
+        if (snap?.kind === 'snapshot') engine.sync(snap.snapshot)
       }
 
-      const interval = 100 // 10 events/s, Binance depth@100ms cadence
+      // initial snapshot exactly as the component pushes it (ring head)
+      const initialSnap = parseFrame(feed.snapshotRaw())
+      if (initialSnap?.kind === 'snapshot') engine.sync(initialSnap.snapshot)
+
+      const prevBid = new Map<number, number>()
+      const prevAsk = new Map<number, number>()
+
       const startedAt = Date.now()
       let events = 0
-      let flushes = 0
-      let maxLevels = 0
+      let views = 0
+      let maxRows = 0
 
       await new Promise<void>((resolve) => {
         const timer = setInterval(() => {
-          const evt = feed.nextEvent()
-          const { applied } = engine.apply(evt)
-          if (applied) {
-            events++
-            store.ingest({
-              bids: flat(evt.bids),
-              asks: flat(evt.asks),
-              seq: engine.sequence,
-              ts: Date.now(),
-            })
+          const frame = parseFrame(feed.nextRaw())
+          if (frame?.kind === 'diff') {
+            const { applied } = engine.apply(frame.event)
+            if (applied) events++
           }
-        }, interval)
+        }, 100)
 
         const render = setInterval(() => {
-          const view = store.flush(600)
-          if (view.bids.length + view.asks.length > 0) {
-            flushes++
-            maxLevels = Math.max(maxLevels, view.bids.length + view.asks.length)
+          const view = buildView(engine.bids, engine.asks, prevBid, prevAsk, 600)
+          const rows = (view.bids.length + view.asks.length) / ROW_STRIDE
+          if (rows > 0) {
+            views++
+            maxRows = Math.max(maxRows, rows)
           }
-          const elapsed = Date.now() - startedAt
-          if (elapsed >= DURATION_MS) {
+          if (Date.now() - startedAt >= DURATION_MS) {
             clearInterval(timer)
             clearInterval(render)
             resolve()
           }
-        }, 16) // ~60fps render loop
+        }, 16) // ~60fps render cadence
       })
 
-      // --- leak assertions -------------------------------------------------
-      const stats = store.stats()
-      // level maps bounded: synthetic feed spans a fixed price band
-      expect(stats.bidLevels + stats.askLevels).toBeLessThan(8_000)
-      // nothing retained in the ring buffer after the last flush
-      expect(ring.size).toBe(0)
-      // every drained slot must have released its batch
-      // (drain() nulls slots; only capacity references remain)
+      // --- leak assertions ---------------------------------------------------
+      // level maps bounded: engine hysteresis prunes at 12k/side
+      expect(engine.bids.size + engine.asks.size).toBeLessThan(24_000)
+      // flash-tracking maps only ever hold the visible window (<= 600/side)
+      expect(prevBid.size).toBeLessThanOrEqual(600)
+      expect(prevAsk.size).toBeLessThanOrEqual(600)
+      expect(engine.pendingCount).toBe(0)
       // sequence kept advancing the whole time
-      expect(stats.seq).toBeGreaterThan(0)
+      expect(engine.sequence).toBeGreaterThan(0)
       // tolerate setInterval drift (~5% late ticks is normal over minutes)
-      expect(events).toBeGreaterThan((DURATION_MS / interval) * 0.85)
-      expect(flushes).toBeGreaterThan(Math.max(10, (DURATION_MS / 1000) * 2))
-      // synthetic feed never produces gaps; live resync logic is unit-tested
+      expect(events).toBeGreaterThan((DURATION_MS / 100) * 0.85)
+      expect(views).toBeGreaterThan(Math.max(10, (DURATION_MS / 1000) * 2))
+      // the synthetic feed never breaks its own chain
       expect(gaps).toEqual([])
     },
   )
 })
-
-function flat(pairs: [number, number][]): Float64Array {
-  const out = new Float64Array(pairs.length * 2)
-  pairs.forEach(([p, q], i) => {
-    out[i * 2] = p
-    out[i * 2 + 1] = q
-  })
-  return out
-}

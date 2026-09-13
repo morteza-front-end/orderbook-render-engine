@@ -7,7 +7,8 @@ import { expect, test, type Page } from '@playwright/test'
 
 async function waitForLive(page: Page, timeout = 20_000): Promise<void> {
   await expect(page.getByTestId('status')).toHaveText('LIVE', { timeout })
-  await expect(page.getByTestId('levels')).toContainText(/\d+/, { timeout })
+  // wait for the actual book, not the initial "levels 0" placeholder
+  await expect(page.getByTestId('levels')).toContainText(/1,?[12]\d\d/, { timeout })
 }
 
 test('boots the worker pipeline and reaches LIVE with 500+ levels', async ({ page }) => {
@@ -17,7 +18,7 @@ test('boots the worker pipeline and reaches LIVE with 500+ levels', async ({ pag
   await waitForLive(page)
 
   // snapshot has 600 levels per side -> 1200 total in view limit
-  await expect(page.getByTestId('levels')).toContainText(/1[12]\d\d/, { timeout: 15_000 })
+  await expect(page.getByTestId('levels')).toContainText(/1,?[12]\d\d/, { timeout: 15_000 })
   await expect(page.getByTestId('mid')).not.toContainText('—')
   expect(errors).toEqual([])
 })
@@ -26,7 +27,7 @@ test('virtualization keeps the DOM bounded while the book holds 500+ rows', asyn
   await page.goto('/?feed=synthetic')
   await waitForLive(page)
 
-  const domRows = await page.locator('.vl-row').count()
+  const domRows = await page.getByTestId('row').count()
   const levelsText = await page.getByTestId('levels').innerText()
   const levels = Number(levelsText.replace(/\D/g, ''))
   expect(levels).toBeGreaterThanOrEqual(500)
@@ -58,26 +59,26 @@ test('pause freezes the tape, resume continues it', async ({ page }) => {
 
   // tape = the rendered view (rAF flush). While paused, the worker keeps
   // consuming the feed but the view must stop changing entirely.
-  const bids = page.getByTestId('bids-side').locator('.vl-row .price')
-  await expect(bids.first()).toBeVisible()
+  const bids = page.getByTestId('bids-scroll').getByTestId('price').first()
+  await expect(bids).toBeVisible()
 
   await page.getByTestId('pause-btn').click()
   await expect(page.getByTestId('pause-btn')).toHaveText('Resume')
   await page.waitForTimeout(300) // let any in-flight frame land
 
-  const frozen = await bids.first().innerText()
+  const frozen = await bids.innerText()
   await page.waitForTimeout(1500)
-  expect(await bids.first().innerText()).toBe(frozen)
+  expect(await bids.innerText()).toBe(frozen)
 
   await page.getByTestId('pause-btn').click()
   await expect(page.getByTestId('pause-btn')).toHaveText('Pause')
   // with the tape resumed the best bid changes within a couple of seconds
   await expect
-    .poll(async () => bids.first().innerText(), { timeout: 5000 })
+    .poll(async () => bids.innerText(), { timeout: 5000 })
     .not.toBe(frozen)
 })
 
-test('clicking a row selects it (interaction wiring through Pinia session store)', async ({ page }) => {
+test('clicking a row selects it (interaction wiring through plain UI state)', async ({ page }) => {
   await page.goto('/?feed=synthetic')
   await waitForLive(page)
 
@@ -85,10 +86,9 @@ test('clicking a row selects it (interaction wiring through Pinia session store)
   await page.getByTestId('pause-btn').click()
   await expect(page.getByTestId('pause-btn')).toHaveText('Resume')
 
-  const row = page.getByTestId('bids-side').locator('.vl-row').nth(10)
+  const row = page.getByTestId('bids-scroll').getByTestId('row').nth(10)
   await row.click()
-  await expect(page.locator('.obrow.selected')).toBeVisible()
-  await expect(page.locator('.obrow.selected')).toHaveCount(1)
+  await expect(row).toHaveClass(/ring-amber-400/)
 })
 
 test('switching to another symbol resets and rebuilds the book', async ({ page }) => {
@@ -97,5 +97,5 @@ test('switching to another symbol resets and rebuilds the book', async ({ page }
 
   await page.getByLabel('Symbol').selectOption('ethusdt')
   await expect(page.getByTestId('status')).toHaveText('LIVE', { timeout: 15_000 })
-  await expect(page.getByTestId('levels')).toContainText(/1[12]\d\d/, { timeout: 15_000 })
+  await expect(page.getByTestId('levels')).toContainText(/1,?[12]\d\d/, { timeout: 15_000 })
 })

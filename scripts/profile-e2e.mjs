@@ -33,12 +33,12 @@ async function countLongTasks(ms, label) {
 await countLongTasks(6000, 'baseline(rate=100)')
 
 // 1. disable flash animations
-await page.addStyleTag({ content: '.obrow-flash{animation:none!important}' })
+await page.addStyleTag({ content: '.ob-flash{animation:none!important}' })
 await countLongTasks(6000, 'no-flash-anim')
-await page.addStyleTag({ content: '.obrow-flash{display:none!important}' })
+await page.addStyleTag({ content: '.ob-flash{display:none!important}' })
 
 // 2. disable depth bars (layout writes)
-await page.addStyleTag({ content: '.obrow-depth{display:none!important}' })
+await page.addStyleTag({ content: '.ob-flash ~ [class*=bg-emerald]{display:none!important}' })
 await countLongTasks(6000, 'no-depth-bar')
 
 // 3. hide asks list entirely

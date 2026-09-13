@@ -1,9 +1,10 @@
 # Order Book Render Engine
 
-A high-frequency order book UI for Nuxt 4 / Vue 3 that stays at 60fps while
-consuming a continuous diff stream (Binance `@depth@100ms`), built around a
-Web Worker data plane, a non-reactive ring-buffer store, and a
-`requestAnimationFrame`-driven render loop.
+A high-frequency order book UI (Nuxt 4 / Vue 3 / Tailwind v4) that sustains
+60 FPS against a continuous Binance `@depth@100ms` diff stream by keeping
+parsing, diffing and sorting inside a Comlink Web Worker, decoupling message
+rate from render cadence with a ring buffer, and writing book state to a
+single `shallowRef` exclusively inside a `requestAnimationFrame` loop.
 
 **Verification gates (all blocking in CI):** lint, typecheck, unit tests,
 E2E functional tests, and performance tests proving **INP < 200ms** and
@@ -12,99 +13,100 @@ E2E functional tests, and performance tests proving **INP < 200ms** and
 
 ---
 
-## 1. Data flow: WebSocket → Web Worker → Virtual DOM
+## 1. Data flow: WebSocket → Ring Buffer → Worker → Virtual DOM
 
 ```mermaid
 flowchart LR
-    subgraph Data Plane["Data plane (off main thread)"]
-        WS["Binance WebSocket<br/><code>btcusdt@depth@100ms</code>"] --> RAW["Raw message handler<br/>(JSON.parse in worker)"]
-        RAW --> DIFF["DepthDiffEngine<br/>sequence validation + level maps"]
-        REST["REST snapshot<br/>/api/v3/depth?limit=1000"] --> DIFF
-        DIFF --> COALESCE["Batch coalescer<br/>(≥16ms interval)"]
-        COALESCE --> XFER["Float64Array batches<br/>zero-copy transfer"]
+    subgraph MainThread["Main thread (render plane)"]
+        WS["WebSocket<br/>btcusdt@depth@100ms"] -->|"onmessage: raw string"| RING["RingBuffer&lt;string&gt; (512)<br/>back-pressure boundary"]
+        RING -->|"batch drain once per frame"| RAF["requestAnimationFrame loop"]
+        RAF -->|"ingestAndDrain(raws, 600)"| RPC
+        subgraph Transfer["transfer (zero copy)"]
+            RPC["Comlink RPC"]
+        end
+        TRANS["Float64Array bids/asks<br/>[price, qty, total, dir] * rows"] --> POOL["pooled row objects<br/>(mutated in place, zero alloc)"]
+        POOL --> SHALLOW["snapshot.value = {...}<br/>shallowRef replace"]
+        SHALLOW --> VF["windowed v-for<br/>~40 rows in DOM"]
     end
 
-    subgraph Main Thread["Main thread"]
-        XFER -->|"Comlink proxy"| RING["RingBuffer (512 slots)<br/>aggregation + back-pressure"]
-        RING -->|"drain() once per frame"| STORE["OrderBookStore<br/>pure TypeScript class"]
-        STORE -->|"flush(600) sorted view"| RAF["requestAnimationFrame loop"]
-        RAF --> SHALLOW["shallowRef(view)<br/>replaced, never mutated"]
-        SHALLOW --> VLIST["VirtualList<br/>(windowed, fixed row height)"]
-        VLIST --> DOM["Virtual DOM / DOM<br/>~40 rows in DOM for 1200 levels"]
+    subgraph WorkerThread["Worker thread (data plane: worker/orderbook.worker.ts)"]
+        PARSE["parseFrame<br/>snapshot vs diff discrimination"] --> DIFF["DepthDiffEngine<br/>U/u/pu chain + level maps"]
+        DIFF --> SORT["buildView<br/>sort best-first + cumulative totals<br/>+ flash flags + hysteresis prune"]
+        SORT --> TRANS
     end
 
-    PINIA["Pinia<br/>UI / session only"] -.->|"1Hz stats, controls"| RAF
+    RPC -.-> PARSE
 ```
 
 ```mermaid
 sequenceDiagram
-    participant UI as OrderBookPanel (mount)
-    participant C as useOrderbookFeed
+    participant M as index.vue (mount)
     participant W as orderbook.worker (Comlink)
     participant B as Binance
 
-    UI->>C: useOrderbookFeed() + start()
-    C->>W: new Worker(module) + Comlink.wrap
-    C->>W: start(symbol, feed, onBatch, onStatus)
-    W->>B: open <symbol>@depth@100ms (buffer events)
-    W->>B: GET /api/v3/depth?limit=1000
-    B-->>W: snapshot (lastUpdateId)
-    W->>W: sync() + replay buffered events
-    loop every 100ms
-        B-->>W: diff event {U,u,pu,b[],a[]}
-        W->>W: validate chain, apply to level maps
+    M->>W: new Worker(module) + Comlink.wrap
+    M->>W: start(symbol, mode)
+    W->>B: GET /api/v3/depth?limit=1000 (worker-side fetch)
+    M->>B: open <symbol>@depth@100ms (main owns socket)
+    loop every ~100ms
+        B-->>M: raw diff frame
+        M->>M: ringBuffer.push(raw)
     end
-    loop every >=16ms (coalesced)
-        W-->>C: transfer(Float64Array bids/asks)
-        C->>C: ringBuffer.push(batch)
-    end
+    B-->>W: snapshot (via ingest)
     loop every animation frame
-        C->>C: drain ring -> store.flush(600)
-        C->>C: view.value = next (shallowRef replace)
-        C->>UI: virtualized re-render (~40 rows)
+        M->>M: drain ring -> raws[]
+        M->>W: ingestAndDrain(raws, 600)
+        W->>W: parse -> chain-validate -> merge -> sort
+        W-->>M: transfer(Float64Array bids, asks, mid, spread)
+        M->>M: copy into pools -> snapshot.value = {...}
+        M->>M: v-for patch (~40 rows)
     end
-    UI->>C: unmount → AbortController.abort()
-    C->>W: terminate() — sockets, timers, proxies released
+    M->>M: onBeforeUnmount -> abort.abort()
+    M->>M: cancelAnimationFrame + ws.close() + worker.terminate()
 ```
 
 ## 2. Design decisions
 
 | Concern | Decision | Why |
 | --- | --- | --- |
-| Parsing & diffing | Inside the Web Worker | Raw payloads, `JSON.parse` and sequence validation never touch the main thread. The main thread only receives coalesced `Float64Array` batches (zero-copy transfer). |
-| IPC | [Comlink](https://github.com/GoogleChrome/comlink) | Type-safe RPC over `postMessage`; callbacks proxied, buffers transferred. |
-| Data state | Pure TypeScript class `OrderBookStore` + `RingBuffer` — **not** reactive | Running thousands of mutations/s through Vue/Pinia reactivity would invalidate the dependency graph every tick. The book is opaque to the framework; the render loop reads it imperatively. |
-| Back-pressure | 512-slot ring buffer (newest-wins overwrite) | If the feed outpaces the monitor, excess batches coalesce into level maps per frame; drops are counted and surfaced in the UI stats. |
-| Render sync | `requestAnimationFrame` | Buffer reads are locked to the display refresh rate; between flushes returning the shared empty view skips the `shallowRef` write entirely, so the vdom idles. |
-| UI state | Pinia (`session` store) only | Connection status, symbol/feed selection, pause flag, and a 1Hz stats mirror change at human speed — reactivity there is free. |
-| Large lists | Custom windowed `VirtualList` | Fixed row height + passive scroll → constant DOM (~40 rows for 500+ levels), `contain: strict` isolation. |
-| Change signal | `shallowRef` + replace | The view object is swapped, never mutated; downstream components re-render once per frame at most, and no deep reactivity wraps the row arrays. |
-| Lifecycle | `AbortController` per feed | Abort on scope dispose → cancel rAF, clear interval, terminate worker, drain ring buffer. No orphaned workers, listeners, or detached DOM nodes after unmount. |
-| Memory bounds | Hysteretic level pruning (engine: 12k→8k/side, store: 3x→2x of window) | A diff stream accumulates dead far-levels forever; unbounded maps make every sort/scan slower each minute (measured: 50→140ms long tasks within ~90s before this fix, 0 after). Invisible levels are dead weight. |
-| CI determinism | Synthetic feed (Binance-protocol-compatible) | E2E/perf/soak run against a deterministic 100 events/s generator (valid `U/u/pu` chains) so gates don't depend on exchange reachability; live feed is one selector away. |
+| Ownership split | WebSocket on main thread; parse/diff/sort in worker | The abort path can literally `ws.close()`; raw frames are forwarded unparsed, so the main thread only pays a `postMessage` per message (~µs) while all data work is off-thread. The synthetic feed emits the same raw strings, so CI exercises the identical code path. |
+| IPC | [Comlink](https://github.com/GoogleChrome/comlink) | Type-safe RPC over `postMessage`; the drain result is `Comlink.transfer`-ed (zero copy). Callbacks are avoided entirely — status rides along with every drain response. |
+| Back-pressure | 512-slot `RingBuffer<string>` (newest-wins) | Decouples message arrival rate from render cadence: frames accumulate between animation frames and are batch-forwarded in one RPC. Overflow breaks the worker's `U/u/pu` chain, which self-heals via a snapshot resync. |
+| Book state | One `shallowRef` in the main component; value replaced, never mutated | No Vue reactivity wraps the book. The single write happens exclusively in the rAF loop; pooled row objects mean steady-state rendering allocates nothing. |
+| Rendering | Tailwind v4 + raw HTML, windowed `v-for` inline | No UI component library. Fixed 22px rows + passive scroll + `contain: strict` keep the DOM at ~40 rows for 1,200 levels; rows keyed by price. |
+| Flash effects | Worker-computed dir flag + side-scoped CSS animation, 5% threshold | Restarting dozens of CSS animations per frame is itself a long-task vector; only meaningful qty moves flash. |
+| Memory bounds | Hysteretic level pruning (engine 12k→8k/side) + flash-map windowing (≤600/side) + row pooling | A diff stream accumulates dead far-levels forever; measured 50→140ms long-task growth within ~90s before this fix, zero after. |
+| Teardown | One `AbortController`; `onBeforeUnmount` aborts; listener explicitly `cancelAnimationFrame`, `ws.close(1000)`, `worker.terminate()` | Nothing survives unmount: socket, worker heap, rAF loop, ring buffer and pools are all released deterministically. |
+| CI determinism | Synthetic feed emitting Binance wire format | E2E/perf/soak run offline and deterministically; live Binance is one selector away (`?feed=live`). |
 
 ## 3. Binance diff protocol handling (`app/lib/orderbook/depth-diff.ts`)
 
-1. Open `<symbol>@depth@100ms`, buffer events.
-2. Fetch REST snapshot (`limit=1000`), drop buffered events with `u <= lastUpdateId`.
-3. First applied event must bridge `lastUpdateId + 1` (`U <= lastUpdateId+1 <= u`); its `pu` is not validated per spec.
-4. Every later event must satisfy `pu === previous u`.
-5. On any violation: reset + resync (fresh WS + snapshot), counted in the UI stats.
+1. Buffer events arriving before the REST snapshot (worker fetches it).
+2. On snapshot: drop buffered events with `u <= lastUpdateId`, sync level maps.
+3. First applied event must bridge `lastUpdateId + 1` (`U <= lastUpdateId+1 <= u`).
+4. Every later event must satisfy `pu === previous u`; qty `0` deletes a level.
+5. Any violation → reset + fresh snapshot (live) or `stalled` status (synthetic,
+   which makes the main thread restart its generator session).
 
 ## 4. Performance budgets (blocking, `tests/e2e/performance.spec.ts`)
 
 | Metric | Budget | Measured (blocking run) | Measured with |
 | --- | --- | --- | --- |
-| INP (worst interaction) | < 200 ms | **56–72 ms** | Event Timing API, `durationThreshold: 16` (stricter than Chrome's 40ms default), worst entry during an 8s interaction burst against a 100 events/s feed |
+| INP (worst interaction) | < 200 ms | **56 ms** | Event Timing API, `durationThreshold: 16` (stricter than Chrome's 40ms default), worst entry during an 8s interaction burst against a 100 events/s feed |
 | Main-thread task | no task >= 50 ms | **0 long tasks** | `PerformanceObserver('longtask')` over the same window |
 | DOM size | < 100 rows in DOM | **~40 rows for 1,200 levels** | virtualization check in `tests/e2e/orderbook.spec.ts` |
 | Sustained load (90s @ 100 ev/s) | no degradation over time | **0 long tasks, flat 14MB heap** | `scripts/soak-profile.mjs` |
 
 ## 5. Soak test (memory leak verification)
 
-- **Browser** (`tests/e2e/soak.spec.ts`, nightly workflow): 30 minutes at 100 events/s, heap + DOM sampled every 15s via `performance.memory`; fails on monotonic growth (median of first vs last third > 1.5x), heap > 350MB, or DOM inflation.
-- **Engine** (`tests/unit/soak.test.ts`): the same 30 minutes replayed in Node against `DepthDiffEngine` + `RingBuffer` + `OrderBookStore`, asserting level maps and buffers stay bounded.
-- Unmount cleanup is asserted functionally: every E2E navigation abandons the page; worker termination is wired through `AbortController` in `useOrderbookFeed.dispose()`.
+- **Browser** (`tests/e2e/soak.spec.ts`, nightly workflow): 30 minutes at
+  100 events/s, heap + DOM sampled every 15s via `performance.memory`; fails
+  on monotonic growth (median of first vs last third > 1.5x), heap > 350MB,
+  or DOM inflation. Latest 2-minute smoke: heap flat at **10.1MB**, DOM
+  pinned at **487 nodes**, feed sequence 6k → 43k.
+- **Engine** (`tests/unit/soak.test.ts`): the same 30 minutes replayed in
+  Node through the exact browser pipeline (raw frames → parse → diff →
+  view), asserting level maps, pending queue and flash maps stay bounded.
 
 ```bash
 npm run test:soak            # browser heap soak (SOAK_DURATION_MS=1800000)
@@ -114,34 +116,27 @@ RUN_SOAK=1 npm run test:soak:unit
 ## 6. Project layout
 
 ```
+worker/
+  orderbook.worker.ts        # Comlink-exposed data plane: parse, diff, sort, transfer
 app/
-  workers/           # data plane
-    orderbook.worker.ts   # Comlink-exposed worker: WS, REST sync, diff, coalescing
-    feed/synthetic.ts     # deterministic Binance-protocol-compatible feed
-    protocol.ts           # shared worker contract types
+  pages/index.vue            # main component: WS + ring + rAF + shallowRef + teardown
   lib/
-    ring-buffer.ts        # power-of-two ring buffer (aggregation boundary)
+    ring-buffer.ts           # power-of-two ring buffer (back-pressure boundary)
     orderbook/depth-diff.ts  # pure Binance diff engine (unit-tested in Node)
-    orderbook/store.ts    # pure order book store: flush -> sorted windowed view
-  composables/
-    useOrderbookFeed.ts   # worker lifecycle + rAF render loop + abort cleanup
-  components/
-    VirtualList.vue       # windowed list (fixed row height, contain: strict)
-    DepthRow.vue          # depth bar + flash animation
-    OrderBookPanel.vue    # asks/mid/bids layout, controls
-  stores/
-    session.ts            # Pinia: UI/session state ONLY (1Hz stats mirror)
+    orderbook/frames.ts      # wire-format parsing + worker-side view builder
+    orderbook/synthetic.ts   # deterministic Binance-wire-format feed for CI
+  assets/css/main.css        # Tailwind v4 entry + flash animation
 tests/
-  unit/                  # ring buffer, diff protocol, store, engine soak
-  e2e/                   # functional, performance (INP/longtask), memory soak
-scripts/                 # local diagnostics (debug console, cost bisection, sustained census)
-.github/workflows/       # ci.yml (4 blocking gates), soak.yml (nightly)
+  unit/                      # ring buffer, diff protocol, frames, synthetic, engine soak
+  e2e/                       # functional, performance (INP/longtask), memory soak
+scripts/                     # local diagnostics (console dump, cost bisection, sustained census)
+.github/workflows/           # ci.yml (4 blocking gates), soak.yml (nightly)
 ```
 
 ## 7. Stability evidence (profiler benchmarks)
 
 Capture evidence after running the soak locally and attach screenshots to
-`docs/screenshots/` — the README reviewers expect proof, not promises:
+`docs/screenshots/` — reviewers expect proof, not promises:
 
 ```bash
 # 1. start a 100 events/s feed and profile it
@@ -149,7 +144,7 @@ npm run build && npm run preview &
 npx playwright test --project=soak   # or open http://localhost:4173/?feed=synthetic&rate=100
 
 # 2. Chrome DevTools → Memory tab → Heap snapshot at t=0 and t=30min
-#    compare retained size of: OrderBookStore maps, RingBuffer slots, Worker
+#    compare retained size of: engine level maps, flash maps, row pools, Worker
 # 3. Performance tab → record 30s during the burst:
 #    screenshot the main-thread flame chart (all tasks < 50ms)
 # 4. save as docs/screenshots/{heap-t0.png,heap-t30m.png,flamechart.png}
@@ -157,21 +152,17 @@ npx playwright test --project=soak   # or open http://localhost:4173/?feed=synth
 
 | Evidence | Expected result |
 | --- | --- |
-| `docs/screenshots/heap-t0.png` vs `heap-t30m.png` | flat JS heap; no growing `Map` / retained batches |
+| `docs/screenshots/heap-t0.png` vs `heap-t30m.png` | flat JS heap; no growing `Map` / pools |
 | `docs/screenshots/flamechart.png` | continuous rAF ticks, no task crossing the 50ms line |
 | Soak workflow artifacts | `soak-timeline.json` with heap/DOM samples across 30 minutes |
-| CI performance test output | worst interaction ~56–72ms, zero long tasks (see section 4) |
-
-Latest 2-minute smoke run of the browser soak: heap flat at **16.3MB** across all
-samples, DOM pinned at **562 nodes**, feed sequence advancing 6k → 41k. The
-nightly workflow produces the full 30-minute timeline artifact.
+| CI performance test output | worst interaction ~56ms, zero long tasks (see section 4) |
 
 ## 8. Commands
 
 ```bash
 npm run dev        # dev server (default: synthetic feed)
 npm run lint       # ESLint (blocking)
-npm run typecheck  # vue-tsc via nuxt typecheck (blocking)
+npm run typecheck  # vue-tsc via nuxt typecheck, incl. worker/ (blocking)
 npm run test:unit  # Vitest (blocking)
 npm run test:e2e   # Playwright functional + performance gates (blocking)
 npm run ci         # all blocking gates locally

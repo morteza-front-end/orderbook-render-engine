@@ -29,7 +29,7 @@ test(`soak: ${Math.round(DURATION_MS / 60000)}min open feed shows no memory leak
 
   await page.goto('/?feed=synthetic&rate=100')
   await expect(page.getByTestId('status')).toHaveText('LIVE', { timeout: 20_000 })
-  await expect(page.getByTestId('levels')).toContainText(/1[12]\d\d/)
+  await expect(page.getByTestId('levels')).toContainText(/1,?[12]\d\d/)
 
   interface Sample {
     t: number

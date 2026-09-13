@@ -57,7 +57,7 @@ test('INP stays under 200ms and main-thread tasks under 50ms under data pressure
 
   // ---- warmup: snapshot applied, feed bursting, renderer at full rate ----
   await expect(page.getByTestId('status')).toHaveText('LIVE', { timeout: 20_000 })
-  await expect(page.getByTestId('levels')).toContainText(/1[12]\d\d/)
+  await expect(page.getByTestId('levels')).toContainText(/1,?[12]\d\d/)
   await page.waitForTimeout(WARMUP_MS)
 
   // ---- measurement window -------------------------------------------------
@@ -66,7 +66,7 @@ test('INP stays under 200ms and main-thread tasks under 50ms under data pressure
     return window.__obPerf.marks.start as number
   })
 
-  const rows = page.locator('.vl-row')
+  const rows = page.getByTestId('row')
   const rowCount = await rows.count()
   expect(rowCount).toBeGreaterThan(10)
 
@@ -75,7 +75,7 @@ test('INP stays under 200ms and main-thread tasks under 50ms under data pressure
   // 100 events/s flow through the pipeline. Raw coordinate clicks avoid
   // Playwright's actionability retries, which cannot settle on rows that
   // legitimately change every frame.
-  const tape = await page.getByTestId('bids-side').locator('.vl').boundingBox()
+  const tape = await page.getByTestId('bids-scroll').boundingBox()
   expect(tape).not.toBeNull()
 
   const deadline = Date.now() + MEASURE_MS
