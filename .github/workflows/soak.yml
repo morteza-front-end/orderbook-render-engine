@@ -3,7 +3,8 @@ name: Soak
 # 30-minute memory-leak soak: keeps a 100 events/s feed open in a real
 # Chromium heap and fails on monotonic growth or DOM inflation.
 # Artifacts (heap timeline JSON + report) feed the stability evidence
-# section of README.md.
+# section of README.md. The engine soak replays the same 30 minutes
+# through @orderbook/core in Node.
 
 on:
   schedule:
@@ -26,13 +27,15 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-      - run: npm ci
-      - run: npx playwright install --with-deps chromium
-      - run: npm run test:soak
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+        working-directory: apps/nuxt-client
+      - run: pnpm run test:soak
         env:
           CI: 'true'
           SOAK_DURATION_MS: ${{ github.event.inputs.duration_minutes && (github.event.inputs.duration_minutes * 60000) || 1800000 }}
@@ -40,7 +43,7 @@ jobs:
         if: always()
         with:
           name: soak-report
-          path: playwright-report/
+          path: apps/nuxt-client/playwright-report/
           retention-days: 30
 
   engine-soak:
@@ -49,12 +52,13 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-      - run: npm ci
-      - run: npm run test:soak:unit
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run test:soak:unit
         env:
           RUN_SOAK: '1'
           SOAK_DURATION_MS: ${{ github.event.inputs.duration_minutes && (github.event.inputs.duration_minutes * 60000) || 1800000 }}

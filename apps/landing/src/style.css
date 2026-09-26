@@ -1,0 +1,283 @@
+/* Landing page — deliberately dependency-free CSS (no Tailwind, no UI kit):
+   this app exists to be cheap to load and cheap to deploy. */
+
+:root {
+  --bg: #0b0e14;
+  --panel: #131722;
+  --panel-soft: #171c29;
+  --border: #232a3b;
+  --text: #d4d4d8;
+  --muted: #8b93a7;
+  --green: #10b981;
+  --red: #ef4444;
+  --blue: #60a5fa;
+  --amber: #fbbf24;
+  --mono: ui-monospace, 'Cascadia Code', 'JetBrains Mono', Menlo, Consolas, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  background:
+    radial-gradient(1200px 500px at 70% -10%, rgb(96 165 250 / 0.08), transparent 60%),
+    radial-gradient(900px 400px at 10% 110%, rgb(16 185 129 / 0.07), transparent 60%),
+    var(--bg);
+  color: var(--text);
+  font-family: ui-sans-serif, system-ui, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  line-height: 1.6;
+}
+
+.page {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 4rem 1.5rem 3rem;
+}
+
+code {
+  font-family: var(--mono);
+  font-size: 0.85em;
+  background: rgb(255 255 255 / 0.06);
+  border-radius: 4px;
+  padding: 0.1em 0.35em;
+}
+
+pre {
+  margin: 0;
+  overflow-x: auto;
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  line-height: 1.55;
+}
+
+pre code {
+  background: none;
+  padding: 0;
+}
+
+/* ---------------------------------------------------------------- hero */
+
+.eyebrow {
+  margin: 0 0 0.75rem;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.hero h1 {
+  margin: 0 0 0.9rem;
+  font-size: clamp(1.9rem, 4.5vw, 3.1rem);
+  line-height: 1.12;
+  letter-spacing: -0.02em;
+  background: linear-gradient(100deg, #f4f4f5 35%, var(--blue));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.subtitle {
+  margin: 0 auto 2rem;
+  max-width: 46rem;
+  color: var(--muted);
+  font-size: 1.02rem;
+}
+
+.ctas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  justify-content: center;
+}
+
+.cta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.85rem 1.6rem;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  text-decoration: none;
+  font-weight: 650;
+  transition: transform 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.cta:hover {
+  transform: translateY(-2px);
+}
+
+.cta-react:hover {
+  border-color: var(--blue);
+  box-shadow: 0 6px 24px rgb(96 165 250 / 0.18);
+}
+
+.cta-nuxt:hover {
+  border-color: var(--green);
+  box-shadow: 0 6px 24px rgb(16 185 129 / 0.18);
+}
+
+.cta .cta-hint {
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  justify-content: center;
+  margin: 1.8rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.badges li {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.25rem 0.8rem;
+}
+
+/* ------------------------------------------------------- problem/solution */
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 1.1rem;
+  margin: 3.5rem 0 0;
+}
+
+.card {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1.4rem 1.5rem;
+  background: var(--panel);
+}
+
+.card h2 {
+  margin: 0 0 0.6rem;
+  font-size: 1.05rem;
+  letter-spacing: 0.02em;
+}
+
+.problem h2 {
+  color: var(--red);
+}
+
+.solution h2 {
+  color: var(--green);
+}
+
+.card ul {
+  margin: 0.6rem 0;
+  padding-left: 1.1rem;
+  color: var(--muted);
+}
+
+.card li {
+  margin: 0.3rem 0;
+}
+
+.card li::marker {
+  color: var(--border);
+}
+
+.verdict {
+  margin: 0.9rem 0 0;
+  font-size: 0.88rem;
+  color: var(--text);
+  border-top: 1px dashed var(--border);
+  padding-top: 0.8rem;
+}
+
+/* ----------------------------------------------------------- architecture */
+
+.arch,
+.snippets,
+.final-cta {
+  margin-top: 3.5rem;
+}
+
+.arch h2,
+.snippets h2,
+.final-cta h2 {
+  font-size: 1.25rem;
+  margin: 0 0 1rem;
+}
+
+.diagram {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel-soft);
+  padding: 1.1rem 1.2rem;
+  color: #b7c0d4;
+}
+
+/* -------------------------------------------------------------- snippets */
+
+.snippet {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel);
+  padding: 1.2rem 1.4rem 0;
+  margin-bottom: 1.1rem;
+  overflow: hidden;
+}
+
+.snippet h3 {
+  margin: 0 0 0.5rem;
+  font-size: 0.98rem;
+}
+
+.snippet h3 code {
+  color: var(--amber);
+}
+
+.snippet p {
+  color: var(--muted);
+  font-size: 0.92rem;
+  margin: 0 0 0.9rem;
+}
+
+.snippet pre {
+  border-top: 1px solid var(--border);
+  background: #0d1119;
+  padding: 1rem 1.2rem;
+  margin: 0 -1.4rem 0;
+  color: #b7c0d4;
+}
+
+/* -------------------------------------------------------------- final cta */
+
+.final-cta {
+  text-align: center;
+}
+
+.final-cta p {
+  color: var(--muted);
+  max-width: 40rem;
+  margin: 0 auto 1.5rem;
+}
+
+footer {
+  margin-top: 3.5rem;
+  border-top: 1px solid var(--border);
+  padding-top: 1.2rem;
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-family: var(--mono);
+}

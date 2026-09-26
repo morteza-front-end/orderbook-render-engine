@@ -1,37 +1,27 @@
 {
   "name": "orderbook-render-engine",
-  "type": "module",
   "private": true,
-  "scripts": {
-    "build": "nuxt build",
-    "dev": "nuxt dev",
-    "generate": "nuxt generate",
-    "preview": "nuxt preview",
-    "postinstall": "nuxt prepare",
-    "lint": "eslint .",
-    "lint:fix": "eslint . --fix",
-    "typecheck": "nuxt typecheck",
-    "test:unit": "vitest run",
-    "test:unit:watch": "vitest",
-    "test:e2e": "playwright test --project=e2e",
-    "test:soak": "playwright test --project=soak",
-    "test:soak:unit": "vitest run tests/unit/soak.test.ts",
-    "ci": "npm run lint && npm run typecheck && npm run test:unit && npm run test:e2e"
+  "packageManager": "pnpm@11.18.0",
+  "engines": {
+    "node": ">=22"
   },
-  "dependencies": {
-    "comlink": "^4.4.2",
-    "nuxt": "^4.5.2",
-    "vue": "^3.5.42",
-    "vue-router": "^5.3.1"
+  "scripts": {
+    "dev": "turbo run dev --parallel",
+    "dev:landing": "turbo run dev --filter=landing",
+    "dev:nuxt": "turbo run dev --filter=@orderbook/nuxt-client",
+    "dev:react": "turbo run dev --filter=@orderbook/react-client",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test:unit": "turbo run test",
+    "test:e2e": "turbo run test:e2e",
+    "test:e2e:nuxt": "turbo run test:e2e --filter=@orderbook/nuxt-client",
+    "test:e2e:react": "turbo run test:e2e --filter=@orderbook/react-client",
+    "test:soak": "turbo run test:soak",
+    "test:soak:unit": "turbo run test:soak:unit",
+    "ci": "pnpm run lint && pnpm run typecheck && pnpm run test:unit && pnpm run test:e2e"
   },
   "devDependencies": {
-    "@nuxt/eslint": "^1.17.0",
-    "@playwright/test": "^1.63.0",
-    "@tailwindcss/vite": "^4.3.3",
-    "eslint": "^10.10.0",
-    "tailwindcss": "^4.3.3",
-    "typescript": "^6.0.3",
-    "vitest": "^5.0.0",
-    "vue-tsc": "^3.3.11"
+    "turbo": "^2.11.4"
   }
 }

@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="High-frequency order book render engine: a framework-agnostic data-plane core (Web Workers, ring-buffer back-pressure, transferable views) driving Vue and React clients at 60 FPS against 1000Hz streams."
+    />
+    <title>High-Frequency Orderbook Render Engine</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <main class="page">
+      <!-- ============================================================ hero -->
+      <header class="hero">
+        <p class="eyebrow">Turborepo monorepo &middot; pnpm &middot; TypeScript</p>
+        <h1>High-Frequency Orderbook Render Engine</h1>
+        <p class="subtitle">
+          A framework-agnostic data-plane core — <code>@orderbook/core</code> — that keeps
+          60 FPS against sustained exchange-grade streams, with two independent renderers
+          (Nuxt and React) consuming the exact same engine.
+        </p>
+        <div class="ctas">
+          <a class="cta cta-react" id="cta-react" href="/react/">
+            Run React Implementation
+            <span class="cta-hint">Vite + React 19 + useSyncExternalStore</span>
+          </a>
+          <a class="cta cta-nuxt" id="cta-nuxt" href="/nuxt/">
+            Run Nuxt Implementation
+            <span class="cta-hint">Nuxt 4 + shallowRef + rAF batching</span>
+          </a>
+        </div>
+        <ul class="badges">
+          <li>INP &lt; 200ms</li>
+          <li>0 long tasks &ge; 50ms</li>
+          <li>~40 DOM rows for 1,200 levels</li>
+          <li>zero steady-state allocations</li>
+        </ul>
+      </header>
+
+      <!-- ============================================== problem / solution -->
+      <section class="grid">
+        <article class="card problem">
+          <h2>The Problem</h2>
+          <p>
+            A raw exchange feed at <strong>100&ndash;1,000 events per second</strong> is a
+            denial-of-service attack on the browser main thread. Naive designs parse, diff,
+            sort and patch reactive state per message:
+          </p>
+          <ul>
+            <li>JSON parsing + depth diffing runs on the UI thread &rarr; long tasks</li>
+            <li>deep reactivity walks the whole book every update &rarr; GC churn</li>
+            <li>message rate dictates render rate &rarr; layout thrash, frozen input</li>
+            <li>the DOM grows with the book &rarr; memory leaks within minutes</li>
+          </ul>
+          <p class="verdict">Result: the tape renders, the page stops responding.</p>
+        </article>
+
+        <article class="card solution">
+          <h2>The Solution</h2>
+          <p>
+            Move the entire data plane into a <strong>Web Worker</strong> behind a
+            framework-agnostic core, and decouple message rate from render cadence:
+          </p>
+          <ul>
+            <li>parse &rarr; sequence-validate &rarr; merge &rarr; sort all happen off-thread</li>
+            <li>a 512-slot <strong>ring buffer</strong> is the back-pressure boundary</li>
+            <li>one <strong>rAF drain</strong> per frame batches the whole backlog into one RPC</li>
+            <li>windowed views are packed into <strong>transferable Float64Arrays</strong> (zero copy)</li>
+            <li>pooled rows + hysteretic pruning keep heap flat over 30-minute soaks</li>
+          </ul>
+          <p class="verdict">
+            Result: 1000Hz in, one cheap snapshot per frame out — identical for every UI framework.
+          </p>
+        </article>
+      </section>
+
+      <!-- ================================================== architecture -->
+      <section class="arch">
+        <h2>Architecture: one core, two renderers</h2>
+        <pre class="diagram" aria-label="architecture diagram"><code>exchange feed (live WS / synthetic 1000Hz)
+        │  raw JSON strings
+        ▼
+┌─────────────────────────────────────────────────────────────┐
+│ @orderbook/core              ← framework-agnostic, no Vue/  │
+│ ┌───────────────┐   ┌────────────────┐   ┌────────────────┐ │
+│ │ FeedConnection│──▶│ RingBuffer(512)│──▶│ rAF drain loop │ │
+│ │ WS management │   │ back-pressure  │   │ one batch/frame│ │
+│ └───────────────┘   └────────────────┘   └───────┬────────┘ │
+│                                                  │ Comlink  │
+│ ┌────────────────────────────────────────────────▼────────┐ │
+│ │ WORKER: parse → U/u/pu diff engine → sort → imbalance   │ │
+│ │         → windowed Float64Array views (TRANSFERRED)     │ │
+│ └─────────────────────────────────────────────────────────┘ │
+│         pooled rows → snapshot replaced once per frame      │
+└───────────────┬───────────────────────────┬─────────────────┘
+                ▼ shallowRef replace         ▼ useSyncExternalStore
+        apps/nuxt-client (Vue 3)     apps/react-client (React 19)</code></pre>
+      </section>
+
+      <!-- ==================================================== code snacks -->
+      <section class="snippets">
+        <h2>Key architectural decisions</h2>
+
+        <div class="snippet">
+          <h3>1 &middot; The core owns every high-frequency mechanism</h3>
+          <p>
+            Apps never touch the feed, the ring buffer or the worker. They construct one
+            client and consume per-frame snapshots — so Vue and React share the exact same
+            performance envelope.
+          </p>
+          <pre><code>// any app — the entire integration surface
+const client = new OrderbookClient({
+  symbol: 'btcusdt',
+  mode: 'synthetic',          // or 'live' for Binance
+  workerFactory: () => new Worker(
+    new URL('./worker/orderbook.worker.ts', import.meta.url),
+    { type: 'module' }),      // 1-line shim → @orderbook/core/worker
+})
+client.subscribe(render)      // called once per animation frame
+client.start()</code></pre>
+        </div>
+
+        <div class="snippet">
+          <h3>2 &middot; Nuxt: one <code>shallowRef</code>, replaced in rAF only</h3>
+          <p>
+            Book data never enters deep reactivity. The single write happens in the
+            client's rAF-aligned listener; rows are pooled and mutated in place, so
+            steady-state rendering allocates nothing.
+          </p>
+          <pre><code>// apps/nuxt-client — the only reactive boundary
+const snapshot = shallowRef&lt;BookSnapshot&gt;(EMPTY)
+
+client.subscribe(() => {
+  snapshot.value = client.getSnapshot()  // replace, never mutate
+})</code></pre>
+        </div>
+
+        <div class="snippet">
+          <h3>3 &middot; React: <code>useSyncExternalStore</code> at display cadence</h3>
+          <p>
+            The core's cached snapshot changes identity at most once per frame, which is
+            exactly the contract <code>useSyncExternalStore</code> needs — React re-renders
+            at rAF cadence, never at message cadence.
+          </p>
+          <pre><code>// apps/react-client — equivalent discipline, idiomatic React
+const subscribe  = (cb) => client.subscribe(cb)
+const getSnap    = () =&gt; client.getSnapshot()
+const snapshot   = useSyncExternalStore(subscribe, getSnap)</code></pre>
+        </div>
+
+        <div class="snippet">
+          <h3>4 &middot; Zero-copy IPC from worker to DOM</h3>
+          <p>
+            The worker packs the windowed book into flat
+            <code>[price, qty, cumulative, dir]</code> rows and <em>transfers</em> the
+            buffers — no structured clone, no per-row objects crossing the boundary.
+          </p>
+          <pre><code>// packages/core — worker drain result (transferred, zero copy)
+return Comlink.transfer(
+  { bids, asks, mid, spread, imbalance, status, seq },
+  [bids.buffer, asks.buffer],   // ownership moves to the main thread
+)</code></pre>
+        </div>
+      </section>
+
+      <!-- ============================================================ cta -->
+      <section class="final-cta">
+        <h2>See it under load</h2>
+        <p>
+          Both demos boot a deterministic synthetic feed by default (identical wire format
+          to Binance) — switch to the live exchange from the Feed selector inside either app.
+          Push the rate to 1000 events/s; the tape keeps rendering at 60 FPS.
+        </p>
+        <div class="ctas">
+          <a class="cta cta-react" href="/react/?feed=synthetic&amp;rate=1000">Stress React @ 1000 ev/s</a>
+          <a class="cta cta-nuxt" href="/nuxt/?feed=synthetic&amp;rate=1000">Stress Nuxt @ 1000 ev/s</a>
+        </div>
+      </section>
+
+      <footer>
+        <p>
+          Monorepo: <code>apps/landing</code> &middot; <code>apps/react-client</code> &middot;
+          <code>apps/nuxt-client</code> &middot; <code>packages/core</code> &middot;
+          <span id="year"></span>
+        </p>
+      </footer>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

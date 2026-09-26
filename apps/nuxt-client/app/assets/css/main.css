@@ -1,0 +1,25 @@
+@import "tailwindcss";
+
+/* Order book tape flash: side-scoped via --flash-color, driven by the
+   worker-computed dir flag (0 | 1 | -1) on each pooled row. */
+@keyframes ob-flash {
+  from {
+    background-color: var(--flash-color, rgb(16 185 129 / 0.22));
+  }
+  to {
+    background-color: transparent;
+  }
+}
+
+.ob-flash {
+  animation: ob-flash 240ms ease-out;
+}
+
+.ob-scroll {
+  contain: strict;
+  overscroll-behavior: contain;
+}
+
+.ob-window {
+  will-change: transform;
+}

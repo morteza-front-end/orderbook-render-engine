@@ -1,0 +1,9 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "rewrites": [
+    { "source": "/react", "destination": "${REACT_CLIENT_URL}/react/" },
+    { "source": "/react/:path*", "destination": "${REACT_CLIENT_URL}/react/:path*" },
+    { "source": "/nuxt", "destination": "${NUXT_CLIENT_URL}/nuxt/" },
+    { "source": "/nuxt/:path*", "destination": "${NUXT_CLIENT_URL}/nuxt/:path*" }
+  ]
+}

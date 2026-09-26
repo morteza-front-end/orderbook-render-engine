@@ -1,0 +1,19 @@
+{
+  "name": "landing",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port 5173",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --port 4183 --strictPort",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@orderbook/eslint-config": "workspace:*",
+    "eslint": "^10.10.0",
+    "typescript": "^6.0.3",
+    "vite": "^8.3.1"
+  }
+}
