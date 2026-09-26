@@ -21,9 +21,9 @@ export default defineConfig({
   },
   webServer: {
     command: process.env.E2E_DEV ? 'pnpm run dev' : 'pnpm run build && pnpm run preview',
-    url: `http://127.0.0.1:${PORT}/react`,
+    url: `http://127.0.0.1:${PORT}/react/`,
     reuseExistingServer: !process.env.CI,
-    timeout: 300_000,
+    timeout: 120_000,
     env: { PORT: String(PORT) },
   },
   projects: [

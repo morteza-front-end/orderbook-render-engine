@@ -192,13 +192,15 @@ installs the full graph automatically):
 
 | Path served | Project | Root Directory | Build output |
 | --- | --- | --- | --- |
-| `/` | landing | `apps/landing` | static (Vite) |
-| `/react/*` | react-client | `apps/react-client` | static (Vite, `base: '/react/'`) |
+| `/` | landing | `apps/landing` | static (Vite → `dist`) |
+| `/react/*` | react-client | `apps/react-client` | static (Vite → `dist`, `base: '/react/'`) |
 | `/nuxt/*` | nuxt-client | `apps/nuxt-client` | Nitro (Nuxt, `baseURL: '/nuxt/'`) |
 
-Routing is centralized in `apps/landing/vercel.json`: the landing project
-rewrites `/react/*` and `/nuxt/*` to the two client deployments, so one
-domain serves everything:
+Each app commits its own `vercel.json` (`framework`, `buildCommand`,
+`outputDirectory`, `installCommand`), so project creation needs no manual
+build settings. Routing lives in `apps/landing/vercel.json`: the landing
+project rewrites `/react/*` and `/nuxt/*` to the two client deployments,
+so one domain serves everything:
 
 ```
 GET /              → apps/landing (static)
@@ -208,8 +210,11 @@ GET /nuxt/*        → rewrite → nuxt-client project   (base /nuxt/)
 
 Setup:
 
-1. Create the three projects (Import Git repository, select the Root
-   Directory from the table above; Framework Preset auto-detects Vite/Nuxt).
+1. Create the three projects (Import Git repository, set the **Root
+   Directory** from the table above — this is the setting that decides
+   where Vercel looks for `dist`; if you see *"No Output Directory named
+   dist found"*, the Root Directory is wrong). Framework Preset
+   auto-detects from each `vercel.json`.
 2. Copy each client's production domain (e.g.
    `https://orderbook-react.vercel.app`), then in the **landing** project
    set the environment variables referenced by its rewrite config:
