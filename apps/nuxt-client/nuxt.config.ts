@@ -10,6 +10,13 @@ export default defineNuxtConfig({
   // applies to both the dev server and production builds
   app: {
     baseURL: '/nuxt/',
+    head: {
+      meta: [{ name: 'theme-color', content: '#0b0e14' }],
+      link: [
+        { rel: 'icon', type: 'image/svg+xml', href: '/nuxt/favicon.svg' },
+        { rel: 'icon', type: 'image/x-icon', href: '/nuxt/favicon.ico' },
+      ],
+    },
   },
   typescript: {
     tsConfig: {

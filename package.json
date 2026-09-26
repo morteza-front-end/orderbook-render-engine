@@ -19,7 +19,8 @@
     "test:e2e:react": "turbo run test:e2e --filter=@orderbook/react-client",
     "test:soak": "turbo run test:soak",
     "test:soak:unit": "turbo run test:soak:unit",
-    "ci": "pnpm run lint && pnpm run typecheck && pnpm run test:unit && pnpm run test:e2e"
+    "ci": "pnpm run lint && pnpm run typecheck && pnpm run test:unit && pnpm run test:e2e",
+    "favicon": "node scripts/generate-favicon.mjs"
   },
   "devDependencies": {
     "turbo": "^2.11.4"

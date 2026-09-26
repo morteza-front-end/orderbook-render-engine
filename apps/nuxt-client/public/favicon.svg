@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- order-book depth ladder: asks above mid, bids below, cumulative depth -->
+  <rect width="32" height="32" rx="7" fill="#0b0e14"/>
+  <rect x="5" y="1" width="22" height="3" rx="1.5" fill="#ef4444" opacity="0.92"/>
+  <rect x="5" y="6" width="16" height="3" rx="1.5" fill="#ef4444" opacity="0.92"/>
+  <rect x="5" y="11" width="11" height="3" rx="1.5" fill="#ef4444" opacity="0.92"/>
+  <rect x="5" y="16.4" width="22" height="1.2" rx="0.6" fill="#8b93a7" opacity="0.55"/>
+  <rect x="5" y="18" width="11" height="3" rx="1.5" fill="#10b981" opacity="0.92"/>
+  <rect x="5" y="23" width="16" height="3" rx="1.5" fill="#10b981" opacity="0.92"/>
+  <rect x="5" y="28" width="22" height="3" rx="1.5" fill="#10b981" opacity="0.92"/>
+</svg>
