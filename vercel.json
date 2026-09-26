@@ -1,0 +1,13 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "installCommand": "pnpm install",
+  "buildCommand": "pnpm --filter landing run build",
+  "outputDirectory": "apps/landing/dist",
+  "rewrites": [
+    { "source": "/react", "destination": "${REACT_CLIENT_URL}/react/" },
+    { "source": "/react/:path*", "destination": "${REACT_CLIENT_URL}/react/:path*" },
+    { "source": "/nuxt", "destination": "${NUXT_CLIENT_URL}/nuxt/" },
+    { "source": "/nuxt/:path*", "destination": "${NUXT_CLIENT_URL}/nuxt/:path*" }
+  ]
+}
