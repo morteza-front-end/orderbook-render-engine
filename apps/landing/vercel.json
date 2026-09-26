@@ -1,5 +1,9 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "vite",
+  "buildCommand": "pnpm run build",
+  "outputDirectory": "dist",
+  "installCommand": "pnpm install",
   "rewrites": [
     { "source": "/react", "destination": "${REACT_CLIENT_URL}/react/" },
     { "source": "/react/:path*", "destination": "${REACT_CLIENT_URL}/react/:path*" },
