@@ -1,0 +1,764 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>ORDERBOOK·RE — Telemetry</title>
+<style>
+  /* ============================================================ design tokens
+     Swiss technical UI · obsidian field #090a0f · dark slate panels
+     data colors: emerald (bids) / vivid crimson (asks) — flat vectors only
+  ============================================================================ */
+  :root {
+    --bg: #090a0f;
+    --panel: #0d1017;
+    --panel-2: #0f131c;
+    --panel-head: #11151f;
+    --line: #1b2130;
+    --line-strong: #273044;
+    --text: #dfe5f0;
+    --muted: #79839a;
+    --faint: #464f63;
+    --green: #10b981;
+    --green-hi: #34d399;
+    --red: #ef4444;
+    --red-hi: #f87171;
+    --mono: "JetBrains Mono", "Cascadia Mono", Consolas, "SF Mono", "Roboto Mono", monospace;
+    --sans: "Inter", "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 1200px; height: 630px; overflow: hidden; }
+  body {
+    background:
+      linear-gradient(rgba(255,255,255,.022) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,.022) 1px, transparent 1px),
+      linear-gradient(rgba(255,255,255,.034) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,.034) 1px, transparent 1px),
+      var(--bg);
+    background-size: 28px 28px, 28px 28px, 140px 140px, 140px 140px;
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 11px;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: geometricPrecision;
+  }
+  .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+  .frame {
+    height: 100%;
+    display: grid;
+    grid-template-rows: 46px 1fr 24px;
+    gap: 10px;
+    padding: 12px;
+  }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .panel-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 26px;
+    padding: 0 10px;
+    background: var(--panel-head);
+    border-bottom: 1px solid var(--line);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    color: var(--muted);
+    text-transform: uppercase;
+    flex: none;
+  }
+  .panel-head .right { margin-left: auto; color: var(--faint); font-weight: 600; letter-spacing: .08em; }
+
+  /* ================================================================= top bar */
+  .topbar {
+    flex-direction: row;
+    align-items: stretch;
+    background: var(--panel);
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 0 14px;
+    border-right: 1px solid var(--line);
+  }
+  .brand svg { display: block; }
+  .brand-name {
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: .18em;
+    color: var(--text);
+  }
+  .brand-name em { font-style: normal; color: var(--green); }
+  .brand-sub {
+    font-size: 8px;
+    font-weight: 700;
+    letter-spacing: .22em;
+    color: var(--faint);
+    margin-top: 1px;
+  }
+  .sym {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 1px;
+    padding: 0 14px;
+    border-right: 1px solid var(--line);
+  }
+  .sym .id { font-family: var(--mono); font-size: 12px; font-weight: 700; letter-spacing: .06em; }
+  .sym .id i { font-style: normal; color: var(--muted); font-weight: 400; }
+  .sym .venue { font-size: 8px; font-weight: 700; letter-spacing: .18em; color: var(--faint); }
+  .feed {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 0 14px;
+    border-right: 1px solid var(--line);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    color: var(--muted);
+  }
+  .led {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 0 3px rgba(16,185,129,.14);
+  }
+  .seq {
+    display: flex; align-items: center;
+    padding: 0 14px; border-right: 1px solid var(--line);
+    font-size: 10px; color: var(--muted);
+  }
+  .seq b { color: var(--text); font-weight: 600; margin-left: 6px; }
+
+  .fps {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 14px;
+    border-right: 1px solid var(--line);
+  }
+  .fps-num {
+    font-family: var(--mono);
+    font-size: 23px;
+    font-weight: 700;
+    letter-spacing: -.01em;
+    color: var(--text);
+    line-height: 1;
+  }
+  .fps-num small { font-size: 9px; font-weight: 700; color: var(--muted); letter-spacing: .12em; margin-left: 3px; }
+  .fps-meta { display: flex; flex-direction: column; gap: 3px; }
+  .fps-lock {
+    font-size: 8px; font-weight: 800; letter-spacing: .18em;
+    color: var(--green);
+  }
+  .fps-sub { font-family: var(--mono); font-size: 8.5px; color: var(--faint); }
+
+  .workers {
+    margin-left: auto;
+    display: flex;
+    align-items: stretch;
+  }
+  .wchip {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 4px;
+    padding: 0 11px;
+    border-left: 1px solid var(--line);
+    width: 64px;
+  }
+  .wchip .wname { display: flex; align-items: center; gap: 4px; font-size: 8px; font-weight: 800; letter-spacing: .14em; color: var(--muted); }
+  .wname .dot { width: 4px; height: 4px; border-radius: 50%; background: var(--green); opacity: .9; }
+  .wchip:nth-child(2) .dot { animation-delay: .2s }
+  .wchip:nth-child(3) .dot { animation-delay: .4s }
+  .wchip:nth-child(4) .dot { animation-delay: .6s }
+  .dot { animation: blink 1.2s steps(2, jump-none) infinite; }
+  @keyframes blink { 50% { opacity: .25 } }
+  .wbar { display: flex; align-items: flex-end; gap: 1.5px; height: 12px; }
+  .wbar span { flex: 1; background: var(--green); opacity: .8; }
+  .wbar span:nth-child(odd) { opacity: .45 }
+  .whz { font-family: var(--mono); font-size: 8px; color: var(--faint); }
+
+  /* ==================================================================== main */
+  .main {
+    display: grid;
+    grid-template-columns: 1fr 292px 264px;
+    gap: 10px;
+    min-height: 0;
+  }
+
+  /* depth chart */
+  .depth { position: relative; }
+  .depth-canvas { position: absolute; inset: 26px 0 0 0; width: 100%; height: calc(100% - 26px); }
+  .legend { display: flex; align-items: center; gap: 5px; font-size: 8.5px; font-weight: 700; letter-spacing: .1em; }
+  .legend i { width: 8px; height: 3px; display: inline-block; }
+  .chip {
+    position: absolute;
+    font-family: var(--mono);
+    font-size: 10px;
+    padding: 4px 8px;
+    background: rgba(13,16,23,.9);
+    border: 1px solid var(--line-strong);
+    border-radius: 2px;
+    color: var(--text);
+    letter-spacing: .04em;
+    white-space: nowrap;
+  }
+  .chip small { color: var(--faint); font-size: 8px; letter-spacing: .14em; margin-right: 6px; }
+  .chip.mid { top: 38px; left: 50%; transform: translateX(-50%); border-color: var(--line-strong); }
+  .chip.mid b { color: #fff; font-weight: 700; }
+  .chip.spread { bottom: 30px; left: 50%; transform: translateX(-50%); color: var(--muted); }
+  .chip.imb { top: 38px; left: 12px; }
+  .imb-meter {
+    display: inline-block; width: 84px; height: 5px; margin-left: 7px;
+    background: var(--red); vertical-align: middle;
+    position: relative; border-radius: 1px; overflow: hidden;
+  }
+  .imb-meter i { position: absolute; inset: 0 auto 0 0; background: var(--green); }
+  .chip.imb b { font-weight: 700; }
+
+  /* ladder */
+  .ladder { background: var(--panel-2); }
+  .ladder-cols, .lrow {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    padding: 0 10px;
+  }
+  .ladder-cols {
+    height: 20px; align-items: center;
+    font-size: 8px; font-weight: 700; letter-spacing: .14em; color: var(--faint);
+    border-bottom: 1px solid var(--line);
+  }
+  .ladder-cols span:nth-child(2), .lrow span:nth-child(2) { text-align: right; }
+  .ladder-cols span:nth-child(3), .lrow span:nth-child(3) { text-align: right; }
+  .lrows { flex: 1; display: flex; flex-direction: column; justify-content: space-evenly; padding: 2px 0; }
+  .lrow {
+    position: relative;
+    height: 21px;
+    align-items: center;
+    font-family: var(--mono);
+    font-size: 10.5px;
+  }
+  .lrow .bar {
+    position: absolute; top: 3px; bottom: 3px; right: 0;
+    background: var(--red); opacity: .1;
+  }
+  .lrow.bid .bar { background: var(--green); }
+  .lrow span { position: relative; z-index: 1; }
+  .lrow .px { font-weight: 700; letter-spacing: .02em; }
+  .lrow.ask .px { color: var(--red-hi); }
+  .lrow.bid .px { color: var(--green-hi); }
+  .lrow .qty, .lrow .cum { color: var(--muted); }
+  .lrow .cum { color: var(--faint); }
+  .midrow {
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    height: 24px; margin: 1px 0;
+    border-top: 1px solid var(--line-strong);
+    border-bottom: 1px solid var(--line-strong);
+    background: var(--panel-head);
+    font-family: var(--mono); font-size: 9.5px; color: var(--muted);
+    letter-spacing: .06em;
+  }
+  .midrow b { color: var(--text); font-weight: 700; }
+  .ladder-foot {
+    flex: none; display: flex; justify-content: space-between;
+    padding: 6px 10px 7px;
+    border-top: 1px solid var(--line);
+    font-family: var(--mono); font-size: 8.5px; color: var(--faint);
+    letter-spacing: .04em;
+  }
+  .ladder-foot b { color: var(--muted); font-weight: 600; }
+
+  /* right column */
+  .right { display: grid; grid-template-rows: 1fr 206px; gap: 10px; min-height: 0; }
+
+  .exec { background: var(--panel-2); }
+  .exec-stream {
+    flex: 1; overflow: hidden;
+    padding: 6px 0 4px;
+    display: flex; flex-direction: column; justify-content: flex-start;
+    gap: 1px;
+    font-family: var(--mono);
+    font-size: 9.5px;
+    line-height: 1.55;
+    -webkit-mask-image: linear-gradient(transparent, #000 9%);
+    mask-image: linear-gradient(transparent, #000 9%);
+  }
+  .ln { display: flex; gap: 7px; padding: 0 10px; white-space: nowrap; }
+  .ln .t { color: var(--faint); flex: none; }
+  .ln .tag { flex: none; width: 44px; font-weight: 700; letter-spacing: .06em; }
+  .ln .tag.fill-buy { color: var(--green); }
+  .ln .tag.fill-sell { color: var(--red-hi); }
+  .ln .tag.new { color: var(--muted); }
+  .ln .tag.cancel { color: var(--faint); }
+  .ln .tag.engine { color: var(--muted); }
+  .ln .side { width: 26px; flex: none; font-weight: 700; }
+  .ln .side.buy { color: var(--green-hi); }
+  .ln .side.sell { color: var(--red-hi); }
+  .ln .body { color: #b9c2d4; overflow: hidden; text-overflow: ellipsis; }
+  .ln .lat { margin-left: auto; color: var(--muted); padding-right: 2px; }
+  .ln.engine .body { color: var(--faint); }
+  .lat.fast { color: var(--green); }
+  .lat.slow { color: var(--red-hi); }
+
+  .threads { background: var(--panel-2); }
+  .thread-rows { flex: 1; padding: 7px 10px 5px; display: flex; flex-direction: column; justify-content: space-evenly; }
+  .trow { display: grid; grid-template-columns: 34px 1fr 84px; gap: 8px; align-items: center; }
+  .trow .tn { font-family: var(--mono); font-size: 9.5px; font-weight: 700; color: var(--text); }
+  .trow .tn small { display: block; font-weight: 400; font-size: 7.5px; color: var(--faint); letter-spacing: .1em; }
+  .trow .track { position: relative; height: 6px; background: #151a26; border-radius: 1px; overflow: hidden; }
+  .trow .track i { position: absolute; inset: 0 auto 0 0; background: var(--green); opacity: .85; }
+  .trow .track em {
+    position: absolute; top: -2px; bottom: -2px; width: 1px;
+    background: rgba(255,255,255,.28);
+  }
+  .trow .tv { font-family: var(--mono); font-size: 8.5px; color: var(--muted); text-align: right; white-space: nowrap; }
+  .trow .tv b { color: var(--text); font-weight: 600; }
+  .ring {
+    flex: none; margin: 0 10px 8px;
+    border-top: 1px solid var(--line);
+    padding-top: 7px;
+    display: flex; align-items: center; gap: 8px;
+    font-family: var(--mono); font-size: 8.5px; color: var(--faint);
+  }
+  .ring-cells { display: flex; gap: 1px; flex: 1; }
+  .ring-cells i { flex: 1; height: 7px; background: #1a2130; }
+  .ring-cells i.on { background: var(--green); opacity: .75; }
+  .ring-cells i.head { background: #fff; opacity: 1; }
+  .ring b { color: var(--muted); font-weight: 600; }
+
+  /* status bar */
+  .statusbar {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    background: var(--panel);
+    font-family: var(--mono);
+    font-size: 9px;
+    color: var(--muted);
+    letter-spacing: .05em;
+    overflow: hidden;
+  }
+  .statusbar > div {
+    display: flex; align-items: center; gap: 6px;
+    padding: 0 12px;
+    height: 100%;
+    border-right: 1px solid var(--line);
+    white-space: nowrap;
+  }
+  .statusbar b { color: var(--text); font-weight: 600; }
+  .statusbar .ok { color: var(--green); font-weight: 700; }
+  .statusbar .clock { margin-left: auto; border-right: 0; border-left: 1px solid var(--line); color: var(--faint); }
+  .statusbar .clock b { color: var(--muted); font-weight: 400; }
+</style>
+</head>
+<body>
+<div class="frame">
+
+  <!-- ============================================================= top bar -->
+  <header class="panel topbar">
+    <div class="brand">
+      <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true">
+        <rect x="2" y="1.5"  width="12" height="2" fill="#ef4444"/>
+        <rect x="2" y="5"    width="8"  height="2" fill="#ef4444" opacity=".72"/>
+        <rect x="2" y="8.5"  width="5"  height="2" fill="#ef4444" opacity=".45"/>
+        <rect x="2" y="11"   width="5"  height="2" fill="#10b981" opacity=".45"/>
+        <rect x="2" y="14.5" width="8"  height="2" fill="#10b981" opacity=".72"/>
+        <rect x="2" y="18"   width="12" height="2" fill="#10b981"/>
+      </svg>
+      <div>
+        <div class="brand-name">ORDERBOOK<em>·RE</em></div>
+        <div class="brand-sub">TELEMETRY / ENGINE 4.2.1</div>
+      </div>
+    </div>
+    <div class="sym">
+      <span class="id mono">BTC-USDT <i>· PERP</i></span>
+      <span class="venue">DERIBIT · MD 3.0</span>
+    </div>
+    <div class="feed">
+      <span class="led"></span>
+      FEED&nbsp;LIVE
+      <span class="mono" style="color:var(--faint)">WS :9443</span>
+    </div>
+    <div class="seq mono">SEQ<b id="seq">8 412 077</b></div>
+
+    <div class="fps">
+      <div class="fps-num"><span id="fps">60</span><small>FPS</small></div>
+      <div class="fps-meta">
+        <span class="fps-lock">◈ rAF LOCKED</span>
+        <span class="fps-sub">avg 16.71 ms · p99 17.3</span>
+      </div>
+      <canvas id="fps-spark" width="128" height="40" style="width:64px;height:20px"></canvas>
+    </div>
+
+    <div class="workers">
+      <div class="wchip">
+        <span class="wname"><span class="dot"></span>W0 PARSE</span>
+        <span class="wbar"><span style="height:40%"></span><span style="height:65%"></span><span style="height:52%"></span><span style="height:78%"></span><span style="height:58%"></span><span style="height:70%"></span></span>
+        <span class="whz">1 000 ev/s</span>
+      </div>
+      <div class="wchip">
+        <span class="wname"><span class="dot"></span>W1 DIFF</span>
+        <span class="wbar"><span style="height:55%"></span><span style="height:44%"></span><span style="height:72%"></span><span style="height:50%"></span><span style="height:66%"></span><span style="height:48%"></span></span>
+        <span class="whz">seq ok</span>
+      </div>
+      <div class="wchip">
+        <span class="wname"><span class="dot"></span>W2 SORT</span>
+        <span class="wbar"><span style="height:34%"></span><span style="height:58%"></span><span style="height:42%"></span><span style="height:64%"></span><span style="height:38%"></span><span style="height:56%"></span></span>
+        <span class="whz">240 lvl</span>
+      </div>
+      <div class="wchip">
+        <span class="wname"><span class="dot"></span>W3 PACK</span>
+        <span class="wbar"><span style="height:26%"></span><span style="height:40%"></span><span style="height:33%"></span><span style="height:48%"></span><span style="height:30%"></span><span style="height:42%"></span></span>
+        <span class="whz">2×F64 ↗</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- ================================================================ main -->
+  <main class="main">
+
+    <!-- cumulative depth -->
+    <section class="panel depth">
+      <div class="panel-head">
+        CUMULATIVE DEPTH
+        <span class="legend"><i style="background:var(--red)"></i>ASKS</span>
+        <span class="legend"><i style="background:var(--green)"></i>BIDS</span>
+        <span class="right">±0.35% · 44 LVL/SIDE · 60 Hz REDRAW</span>
+      </div>
+      <canvas class="depth-canvas" id="depth"></canvas>
+      <div class="chip mid"><small>MID</small><b id="mid">64 211.50</b></div>
+      <div class="chip imb"><small>IMB</small><b id="imbv">+0.62</b><span class="imb-meter"><i id="imbf" style="width:62%"></i></span></div>
+      <div class="chip spread"><small>SPREAD</small>0.50 &nbsp;·&nbsp; 0.78 bp</div>
+    </section>
+
+    <!-- order book ladder -->
+    <section class="panel ladder">
+      <div class="panel-head">BOOK · L0 WINDOW<span class="right">RENDER 60 Hz</span></div>
+      <div class="ladder-cols"><span>PRICE</span><span>QTY</span><span>Σ QTY</span></div>
+      <div class="lrows" id="ladder"></div>
+      <div class="ladder-foot">
+        <span>DEPTH ±0.35% <b>84.2 BTC</b></span>
+        <span>B1 × <b id="b1">47</b> FPO / 1.2s</span>
+      </div>
+    </section>
+
+    <!-- right column -->
+    <aside class="right">
+
+      <!-- execution log -->
+      <section class="panel exec">
+        <div class="panel-head">EXECUTION LOG<span class="right">GATE→GATE · µs</span></div>
+        <div class="exec-stream" id="exec"></div>
+      </section>
+
+      <!-- threads -->
+      <section class="panel threads">
+        <div class="panel-head">THREADS<span class="right">4 WORKERS + MAIN</span></div>
+        <div class="thread-rows">
+          <div class="trow">
+            <span class="tn mono">MAIN<small>rAF DRAIN</small></span>
+            <span class="track"><i style="width:22%"></i><em style="left:22%"></em></span>
+            <span class="tv mono"><b>60</b> fps · 3.7 ms</span>
+          </div>
+          <div class="trow">
+            <span class="tn mono">W0<small>PARSE</small></span>
+            <span class="track"><i style="width:41%"></i><em style="left:41%"></em></span>
+            <span class="tv mono"><b>1 000</b> ev/s · 41%</span>
+          </div>
+          <div class="trow">
+            <span class="tn mono">W1<small>DIFF</small></span>
+            <span class="track"><i style="width:58%"></i><em style="left:58%"></em></span>
+            <span class="tv mono"><b>8.4 M</b> seq · 58%</span>
+          </div>
+          <div class="trow">
+            <span class="tn mono">W2<small>SORT</small></span>
+            <span class="track"><i style="width:33%"></i><em style="left:33%"></em></span>
+            <span class="tv mono"><b>240</b> lvl · 33%</span>
+          </div>
+          <div class="trow">
+            <span class="tn mono">W3<small>PACK</small></span>
+            <span class="track"><i style="width:27%"></i><em style="left:27%"></em></span>
+            <span class="tv mono"><b>0</b> cpy · 27%</span>
+          </div>
+        </div>
+        <div class="ring">
+          RING 512
+          <span class="ring-cells" id="ring"></span>
+          <b>63%</b> · 0 DROPS
+        </div>
+      </section>
+    </aside>
+  </main>
+
+  <!-- =========================================================== status bar -->
+  <footer class="statusbar mono">
+    <div>SNAP <b>1 / FRAME</b></div>
+    <div>RATE <b>1 000 ev/s</b></div>
+    <div>INP <b>41 ms</b></div>
+    <div>LONG TASKS ≥50 ms <b class="ok">0</b></div>
+    <div>HEAP Δ 30 min <b class="ok">+0.1 MB</b></div>
+    <div>ALLOC <b class="ok">0 B / frame</b></div>
+    <div class="clock">UTC <b id="clock">07:32:11.482119</b></div>
+  </footer>
+</div>
+
+<script>
+'use strict'
+/* Deterministic telemetry mock — seeded PRNG so every render of this
+   artifact is pixel-reproducible. No external resources. */
+
+/* ------------------------------------------------------------ seeded PRNG */
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0
+    let t = Math.imul(a ^ (a >>> 15), 1 | a)
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
+const rnd = mulberry32(0xC0FFEE)
+const fmt = (n, d = 2) => n.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d })
+const pad = (n, w) => String(n).padStart(w, '0')
+
+/* ------------------------------------------------------------- depth book */
+const TICK = 0.5
+let mid = 64211.5
+const LEVELS = 44
+const bids = []   // { price, qty } descending from mid
+const asks = []   // ascending from mid
+for (let i = 0; i < LEVELS; i++) {
+  bids.push({ price: mid - TICK * (i + 1), qty: 0.35 + rnd() * 2.6 + i * 0.055 })
+  asks.push({ price: mid + TICK * (i + 1), qty: 0.35 + rnd() * 2.6 + i * 0.055 })
+}
+const cum = (rows) => { let s = 0; return rows.map(r => (s += r.qty)) }
+
+/* ----------------------------------------------------------- depth canvas */
+const canvas = document.getElementById('depth')
+const ctx = canvas.getContext('2d')
+const C = { green: '#10b981', red: '#ef4444', greenHi: '#34d399', redHi: '#f87171',
+            grid: 'rgba(148,163,190,.075)', gridStrong: 'rgba(148,163,190,.14)',
+            axis: '#464f63' }
+
+function drawDepth(t) {
+  const dpr = window.devicePixelRatio || 1
+  const w = canvas.clientWidth, h = canvas.clientHeight
+  if (canvas.width !== w * dpr) { canvas.width = w * dpr; canvas.height = h * dpr }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+  ctx.clearRect(0, 0, w, h)
+
+  const padL = 8, padR = 8, padT = 30, padB = 26
+  const iw = w - padL - padR, ih = h - padT - padB
+
+  /* live wiggle on the near side of the book */
+  const wb = bids.map((r, i) => ({ ...r, qty: r.qty * (1 + (i < 10 ? 0.28 * Math.sin(t / 460 + i * 1.7) : 0)) }))
+  const wa = asks.map((r, i) => ({ ...r, qty: r.qty * (1 + (i < 10 ? 0.28 * Math.sin(t / 430 + i * 1.3 + 2) : 0)) }))
+  const cb = cum(wb), ca = cum(wa)
+  const maxQ = Math.max(cb[LEVELS - 1], ca[LEVELS - 1]) * 1.06
+  const X = (i) => padL + (iw * (i + 0.5)) / (2 * LEVELS)        /* bids left half */
+  const XA = (i) => padL + iw / 2 + (iw * (i + 0.5)) / (2 * LEVELS) /* asks right half */
+  const Y = (q) => padT + ih - (ih * q) / maxQ
+
+  /* grid — subtle data lines */
+  ctx.lineWidth = 1
+  for (let g = 0; g <= 4; g++) {
+    const y = padT + (ih * g) / 4
+    ctx.strokeStyle = g === 4 ? C.gridStrong : C.grid
+    ctx.beginPath(); ctx.moveTo(padL, y + .5); ctx.lineTo(w - padR, y + .5); ctx.stroke()
+  }
+  for (let g = 0; g <= 8; g++) {
+    const x = padL + (iw * g) / 8
+    ctx.strokeStyle = g === 4 ? C.gridStrong : C.grid
+    ctx.beginPath(); ctx.moveTo(x + .5, padT); ctx.lineTo(x + .5, padT + ih); ctx.stroke()
+  }
+
+  /* stepped cumulative vectors — flat, hard edges, hairline level separations */
+  const halfw = iw / (4 * LEVELS)
+  const area = (cums, x0fn, color, hi) => {
+    const top = []
+    for (let i = 0; i < LEVELS; i++) {
+      const x = x0fn(i), y = Y(cums[i])
+      top.push([x - halfw + 1, y], [x + halfw - 1, y])
+    }
+    ctx.beginPath()
+    ctx.moveTo(top[0][0], padT + ih)
+    for (const [x, y] of top) ctx.lineTo(x, y)
+    ctx.lineTo(top[top.length - 1][0], padT + ih)
+    ctx.closePath()
+    ctx.fillStyle = color; ctx.globalAlpha = .16; ctx.fill()
+    ctx.globalAlpha = 1
+    ctx.strokeStyle = color; ctx.lineWidth = 1.5; ctx.stroke()
+    ctx.beginPath()
+    for (const [x, y] of top) ctx.lineTo(x, y)
+    ctx.strokeStyle = hi; ctx.lineWidth = .75; ctx.globalAlpha = .8; ctx.stroke()
+    ctx.globalAlpha = 1
+  }
+  area(cb, X, C.green, C.greenHi)
+  area(ca, XA, C.red, C.redHi)
+
+  /* mid line + marker */
+  const xm = padL + iw / 2
+  ctx.strokeStyle = 'rgba(223,229,240,.4)'
+  ctx.setLineDash([2, 3]); ctx.lineWidth = 1
+  ctx.beginPath(); ctx.moveTo(xm + .5, padT - 4); ctx.lineTo(xm + .5, padT + ih); ctx.stroke()
+  ctx.setLineDash([])
+  ctx.fillStyle = '#dfe5f0'
+  ctx.beginPath()
+  ctx.moveTo(xm, padT - 8); ctx.lineTo(xm + 3.5, padT - 3.5); ctx.lineTo(xm, padT + 1); ctx.lineTo(xm - 3.5, padT - 3.5)
+  ctx.closePath(); ctx.fill()
+
+  /* axes labels */
+  ctx.fillStyle = C.axis
+  ctx.font = '8.5px "JetBrains Mono", Consolas, monospace'
+  ctx.textAlign = 'center'
+  for (let g = 0; g <= 4; g++) {
+    const x = padL + (iw * g) / 8
+    ctx.fillText(fmt(mid - TICK * LEVELS + (TICK * LEVELS * 2 * g) / 8, 0), x, h - 12)
+  }
+  ctx.textAlign = 'left'
+  for (let g = 0; g <= 4; g++) {
+    const y = padT + (ih * g) / 4
+    ctx.fillText(fmt((maxQ * (4 - g)) / 4, 0) + ' ₿', padL + 4, Math.min(y + 3, padT + ih - 3))
+  }
+}
+
+/* ------------------------------------------------------------- fps sparkline */
+;(function spark() {
+  const c = document.getElementById('fps-spark'), g = c.getContext('2d')
+  const N = 32, bars = []
+  for (let i = 0; i < N; i++) bars.push(15.9 + rnd() * 1.1 + (i % 7 === 0 ? .25 : 0))
+  g.clearRect(0, 0, c.width, c.height)
+  const bw = c.width / N
+  bars.forEach((ms, i) => {
+    const hgt = (ms - 15.5) / 2.4 * c.height
+    g.fillStyle = ms > 17 ? '#ef4444' : '#10b981'
+    g.globalAlpha = .9
+    g.fillRect(i * bw + 1, c.height - hgt, bw - 2, hgt)
+  })
+  g.globalAlpha = 1
+  g.strokeStyle = 'rgba(223,229,240,.25)'
+  g.setLineDash([2, 3])
+  g.beginPath(); g.moveTo(0, c.height - (16.7 - 15.5) / 2.4 * c.height + .5); g.lineTo(c.width, c.height - (16.7 - 15.5) / 2.4 * c.height + .5); g.stroke()
+})()
+
+/* --------------------------------------------------------------- ladder DOM */
+;(function ladder() {
+  const root = document.getElementById('ladder')
+  const rows = []
+  let cA = 0, cB = 0
+  const askRows = asks.slice(0, 9).map(r => { cA += r.qty; return { ...r, cum: cA } })
+  const bidRows = bids.slice(0, 9).map(r => { cB += r.qty; return { ...r, cum: cB } })
+  const maxCum = Math.max(cA, cB)
+  const html = (r, cls) =>
+    `<div class="lrow ${cls}"><span class="bar" style="width:${(r.cum / maxCum * 92).toFixed(1)}%"></span>` +
+    `<span class="px">${fmt(r.price, 1)}</span><span class="qty">${fmt(r.qty, 3)}</span><span class="cum">${fmt(r.cum, 2)}</span></div>`
+  let out = askRows.slice().reverse().map(r => html(r, 'ask')).join('')
+  out += `<div class="midrow"><span>SPREAD <b>0.50</b></span><span style="color:var(--faint)">|</span><span>MID <b>${fmt(mid, 1)}</b></span></div>`
+  out += bidRows.map(r => html(r, 'bid')).join('')
+  root.innerHTML = out
+})()
+
+/* ------------------------------------------------------------ execution log */
+const execEl = document.getElementById('exec')
+const H = () => {
+  const d = new Date()
+  return `${pad(d.getUTCHours(), 2)}:${pad(d.getUTCMinutes(), 2)}:${pad(d.getUTCSeconds(), 2)}.${pad(d.getUTCMilliseconds(), 3)}${pad(Math.floor(rnd() * 999), 3)}`
+}
+function line() {
+  const r = rnd()
+  if (r < 0.14) {
+    const kind = rnd() < .5 ? 'ring.flush' : 'transfer'
+    const body = kind === 'ring.flush'
+      ? '512 slots → 1 batch · drain ok'
+      : 'Float64Array(336) → main · 0 cpy'
+    return `<div class="ln engine"><span class="t">${H()}</span><span class="tag engine">ENGINE</span><span class="body">${body}</span><span class="lat">${(28 + rnd() * 70 | 0)}µs</span></div>`
+  }
+  const buy = rnd() < .5
+  const cancel = r < 0.32
+  const qty = (0.05 + rnd() * 1.4)
+  const px = mid + (buy ? -1 : 1) * TICK * Math.floor(rnd() * 5)
+  const lat = 60 + rnd() * 340
+  const latCls = lat < 150 ? 'fast' : lat > 360 ? 'slow' : ''
+  const tag = cancel ? 'CANCEL' : 'FILL'
+  const tagCls = cancel ? 'cancel' : buy ? 'fill-buy' : 'fill-sell'
+  return `<div class="ln"><span class="t">${H()}</span><span class="tag ${tagCls}">${tag}</span>` +
+    `<span class="side ${buy ? 'buy' : 'sell'}">${buy ? 'BUY' : 'SELL'}</span>` +
+    `<span class="body">${fmt(qty, 4)} @ ${fmt(px, 1)}</span>` +
+    `<span class="lat ${latCls}">${lat < 1000 ? (lat | 0) + 'µs' : (lat / 1000).toFixed(2) + 'ms'}</span></div>`
+}
+const seedLines = Array.from({ length: 24 }, line)
+execEl.innerHTML = seedLines.slice(0, 16).join('')
+
+/* ------------------------------------------------------------ ring cells */
+;(function ring() {
+  const el = document.getElementById('ring')
+  const cells = []
+  for (let i = 0; i < 40; i++) {
+    const on = i < 25
+    cells.push(`<i class="${on ? 'on' : ''}${i === 25 ? ' head' : ''}"></i>`)
+  }
+  el.innerHTML = cells.join('')
+})()
+
+/* ------------------------------------------------------------ tickers */
+const FREEZE = location.hash.includes('freeze') /* #freeze: settle for screenshots */
+const timers = new Set()
+const every = (fn, ms) => { const id = setInterval(fn, ms); timers.add(id); return id }
+const seqEl = document.getElementById('seq')
+const clockEl = document.getElementById('clock')
+let seq = 8412077
+every(() => {
+  seq += 3 + Math.floor(rnd() * 14)
+  seqEl.textContent = seq.toLocaleString('en-US')
+}, 90)
+every(() => {
+  const d = new Date()
+  clockEl.textContent = `${pad(d.getUTCHours(), 2)}:${pad(d.getUTCMinutes(), 2)}:${pad(d.getUTCSeconds(), 2)}.${pad(d.getUTCMilliseconds(), 3)}${pad(Math.floor(rnd() * 999), 3)}`
+}, 61)
+every(() => {
+  execEl.insertAdjacentHTML('beforeend', line())
+  while (execEl.children.length > 16) execEl.firstElementChild.remove()
+}, 140)
+
+/* ------------------------------------------------- measured fps + rAF loop */
+const fpsEl = document.getElementById('fps')
+drawDepth(0) /* synchronous first paint — artwork complete even without rAF */
+let frames = 0, last = performance.now(), t0 = last
+let frozen = false, rafId = 0
+function freeze() {
+  frozen = true
+  timers.forEach(clearInterval)
+  timers.clear()
+  cancelAnimationFrame(rafId)
+  fpsEl.textContent = '60'
+}
+if (FREEZE) timers.add(setTimeout(freeze, 900))
+function loop(t) {
+  if (frozen) return
+  frames++
+  if (t - last >= 500) {
+    const fps = Math.round(frames * 1000 / (t - last))
+    fpsEl.textContent = Math.min(fps, 60)
+    frames = 0; last = t
+  }
+  drawDepth(t - t0)
+  rafId = requestAnimationFrame(loop)
+}
+rafId = requestAnimationFrame(loop)
+
+/* readiness flag for external screenshot tooling */
+window.__OG_READY = true
+</script>
+</body>
+</html>

@@ -184,6 +184,20 @@ pnpm run ci                 # all blocking gates locally
 Both clients boot the deterministic synthetic feed by default; append
 `?feed=live` for Binance or `?rate=1000` to stress the pipeline.
 
+### Generated assets
+
+```bash
+pnpm run favicon        # apps/*/public/favicon.ico — hand-rolled PNG encoder, no deps
+pnpm run og             # apps/landing/public/og.png — 1200:630 Open Graph image
+pnpm run og:verify      # pixel-probe the rendered og.png against the design palette
+```
+
+The OG image is a telemetry-dashboard snapshot of the engine rendered from
+`scripts/og/dashboard.html` (a self-contained, seeded page) through
+chrome-headless-shell in screenshot mode — the same binary Playwright
+installs, driven directly with zero npm dependencies. `CHROME_PATH` overrides
+the executable; `OG_SCALE=1` bakes a 1200×630 PNG instead of 2400×1260.
+
 ## 8. Deployment (Vercel)
 
 The workspace deploys as **three Vercel projects from this one repository**,
