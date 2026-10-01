@@ -236,9 +236,11 @@ Setup:
    - `NUXT_CLIENT_URL` — production domain of the nuxt-client project
 3. Redeploy the landing project so the rewrites pick up the variables.
 
-No path-prefixed asset config is needed beyond what is committed: both
-clients already build with their base paths (`vite base`, Nuxt `app.baseURL`),
-so the rewrite targets serve canonical, correctly-asset-linked apps.
+No path-prefixed asset config is needed beyond what is committed: Nuxt serves
+`/nuxt/*` natively (`app.baseURL` is baked into the Nitro routes), while the
+static React build serves `dist/` at the project root — its own `vercel.json`
+rewrites `/react/* → /*` so the deployment answers on the `/react` prefix the
+landing rewrite forwards.
 
 ## 9. Stability evidence (profiler benchmarks)
 

@@ -3,5 +3,9 @@
   "framework": "vite",
   "buildCommand": "pnpm run build",
   "outputDirectory": "dist",
-  "installCommand": "pnpm install"
+  "installCommand": "pnpm install",
+  "rewrites": [
+    { "source": "/react", "destination": "/" },
+    { "source": "/react/:path*", "destination": "/:path*" }
+  ]
 }
