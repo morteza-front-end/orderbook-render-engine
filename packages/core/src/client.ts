@@ -45,7 +45,9 @@ const EMPTY_SNAPSHOT: BookSnapshot = {
  *                                             ▼
  *                     pooled row objects → NEW snapshot wrapper per frame
  *                                             ▼
- *                    listeners notified (max once per animation frame)
+ *           listeners notified — max once per animation frame, and only
+ *           when the rendered content actually changed (a settled book
+ *           keeps the same snapshot reference: no notify, no re-render)
  *
  * Contract with UI frameworks:
  *  - `getSnapshot()` returns a cached object whose identity changes at
@@ -183,7 +185,10 @@ export class OrderbookClient {
 
   /**
    * Register a listener invoked after each snapshot replace — at most once
-   * per animation frame. Returns an unsubscribe function.
+   * per animation frame, and only when the rendered content changed (the
+   * identity contract `useSyncExternalStore` needs: between notifies,
+   * `getSnapshot()` returns the exact same reference). Returns an
+   * unsubscribe function.
    */
   subscribe(listener: () => void): () => void {
     this.listeners.add(listener)
@@ -253,19 +258,32 @@ export class OrderbookClient {
         // double-buffered pools). `smoothingMs: 0` falls back to raw steps.
         const alpha = smoothAlpha(now - this.lastDrainAt, this.smoothingMs)
         this.lastDrainAt = now
+        let changed = true
         if (this.smoothingMs > 0) {
-          advanceSide(res.bids, this.bidDisplay, this.bidSwap, alpha, true)
-          advanceSide(res.asks, this.askDisplay, this.askSwap, alpha, false)
-          // the just-written swap buffers become the displayed pools
-          const bidNext = this.bidSwap
-          this.bidSwap = this.bidDisplay
-          this.bidDisplay = bidNext
-          const askNext = this.askSwap
-          this.askSwap = this.askDisplay
-          this.askDisplay = askNext
+          // write into the swap buffers first, then publish ONLY when the
+          // rendered content actually changed — a settled book keeps the
+          // exact same snapshot reference (no re-render, no notify), which
+          // is the identity contract useSyncExternalStore requires
+          const bidsChanged = advanceSide(res.bids, this.bidDisplay, this.bidSwap, alpha, true)
+          const asksChanged = advanceSide(res.asks, this.askDisplay, this.askSwap, alpha, false)
           this.midDisplay = approach(this.midDisplay, res.mid, alpha)
           this.spreadDisplay = approach(this.spreadDisplay, res.spread, alpha)
           this.imbalanceDisplay = approach(this.imbalanceDisplay, res.imbalance, alpha)
+          changed =
+            bidsChanged ||
+            asksChanged ||
+            this.midDisplay !== res.mid ||
+            this.spreadDisplay !== res.spread ||
+            this.imbalanceDisplay !== res.imbalance
+          if (changed) {
+            // the just-written swap buffers become the displayed pools
+            const bidNext = this.bidSwap
+            this.bidSwap = this.bidDisplay
+            this.bidDisplay = bidNext
+            const askNext = this.askSwap
+            this.askSwap = this.askDisplay
+            this.askDisplay = askNext
+          }
         } else {
           this.copyRows(res.bids, this.bidDisplay)
           this.copyRows(res.asks, this.askDisplay)
@@ -273,16 +291,18 @@ export class OrderbookClient {
           this.spreadDisplay = res.spread
           this.imbalanceDisplay = res.imbalance
         }
-        // replace (never mutate) — the one write that can trigger a re-render
-        this.snapshot = {
-          version: ++this.version,
-          bids: this.bidDisplay,
-          asks: this.askDisplay,
-          mid: this.midDisplay,
-          spread: this.spreadDisplay,
-          imbalance: this.imbalanceDisplay,
+        if (changed) {
+          // replace (never mutate) — the one write that can trigger a re-render
+          this.snapshot = {
+            version: ++this.version,
+            bids: this.bidDisplay,
+            asks: this.askDisplay,
+            mid: this.midDisplay,
+            spread: this.spreadDisplay,
+            imbalance: this.imbalanceDisplay,
+          }
+          for (const listener of this.listeners) listener()
         }
-        for (const listener of this.listeners) listener()
       }
 
       if (now - this.lastStatsAt >= this.statsIntervalMs) {

@@ -117,4 +117,32 @@ describe('advanceSide', () => {
     advanceSide(flat([[100, 1, 1, 0]]), [...out], out, 1, true)
     expect(out).toHaveLength(1)
   })
+
+  it('reports no change when the targets match the settled display', () => {
+    const prev: PooledRow[] = [
+      { p: 100, q: 2, t: 2, d: 0 },
+      { p: 99, q: 1, t: 3, d: 0 },
+    ]
+    const out: PooledRow[] = []
+    const targets = flat([
+      [100, 2, 2, 0],
+      [99, 1, 3, 0],
+    ])
+    expect(advanceSide(targets, prev, out, 0.5, true)).toBe(false)
+  })
+
+  it('reports a change when levels swap in and out at constant length', () => {
+    // worst case for length-based change detection: 101 replaces 99, every
+    // retained value already settled — the row set still changed
+    const prev: PooledRow[] = [
+      { p: 100, q: 2, t: 2, d: 0 },
+      { p: 99, q: 1, t: 3, d: 0 },
+    ]
+    const out: PooledRow[] = []
+    const targets = flat([
+      [101, 2, 2, 0],
+      [100, 2, 2, 0],
+    ])
+    expect(advanceSide(targets, prev, out, 1, true)).toBe(true)
+  })
 })

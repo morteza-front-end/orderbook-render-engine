@@ -59,7 +59,11 @@ export function approach(cur: number, target: number, alpha: number): number {
  * previous display value seed AT target (no fake full-scale sweeps).
  *
  * Writes into `out` (the caller's swap buffer; may alias neither input)
- * and returns whether any displayed value is still moving.
+ * and returns whether the rendered content changed in any way — a value
+ * still gliding, a level entering or leaving the window — i.e. whether
+ * the caller should publish a new snapshot and notify listeners. A
+ * settled book returns false, which lets `getSnapshot()` keep returning
+ * the exact same reference until something actually changed.
  */
 export function advanceSide(
   targets: Float64Array,
@@ -68,9 +72,10 @@ export function advanceSide(
   alpha: number,
   descending: boolean,
 ): boolean {
-  let moving = false
+  let changed = false
   const rows = targets.length / ROW_STRIDE
   let j = 0
+  let matched = 0
   for (let i = 0; i < rows; i++) {
     const o = i * ROW_STRIDE
     const p = targets[o]!
@@ -80,10 +85,13 @@ export function advanceSide(
     while (j < prev.length && (descending ? prev[j]!.p > p : prev[j]!.p < p)) j++
     let qPrev = qTarget
     let tPrev = tTarget
-    const match = j < prev.length && prev[j]!.p === p
-    if (match) {
+    if (j < prev.length && prev[j]!.p === p) {
       qPrev = prev[j]!.q
       tPrev = prev[j]!.t
+      matched++
+    } else {
+      // unseen price: mounts a new row, so the view must repaint
+      changed = true
     }
     const q = approach(qPrev, qTarget, alpha)
     const t = approach(tPrev, tTarget, alpha)
@@ -96,8 +104,10 @@ export function advanceSide(
     } else {
       out[i] = { p, q, t, d: targets[o + 3]! }
     }
-    if (q !== qTarget || t !== tTarget) moving = true
+    if (q !== qTarget || t !== tTarget) changed = true
   }
   out.length = rows
-  return moving
+  // prices that left the window unmount rows — also a repaint
+  if (matched !== prev.length) changed = true
+  return changed
 }

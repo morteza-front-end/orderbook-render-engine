@@ -92,3 +92,26 @@ test('switching to another symbol resets and rebuilds the book', async ({ page }
   await expect(page.getByTestId('status')).toHaveText('LIVE', { timeout: 15_000 })
   await expect(page.getByTestId('levels')).toContainText(/1,?[12]\d\d/, { timeout: 15_000 })
 })
+
+test('useSyncExternalStore contract holds at 1000Hz (cached snapshot, no warnings, no errors)', async ({
+  page,
+}) => {
+  const consoleErrors: string[] = []
+  const pageErrors: string[] = []
+  page.on('console', (msg) => {
+    if (msg.type() === 'error') consoleErrors.push(msg.text())
+  })
+  page.on('pageerror', (err) => pageErrors.push(String(err)))
+
+  await page.goto('/?feed=synthetic&rate=1000')
+  await waitForLive(page)
+  await page.waitForTimeout(4000)
+
+  // getSnapshot() must return the same reference until content changed —
+  // React logs "The result of getSnapshot should be cached..." otherwise
+  const uncachedSnapshotWarnings = consoleErrors.filter((t) =>
+    /getSnapshot|infinite loop/i.test(t),
+  )
+  expect(uncachedSnapshotWarnings).toEqual([])
+  expect(pageErrors).toEqual([])
+})
