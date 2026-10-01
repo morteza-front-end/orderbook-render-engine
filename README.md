@@ -229,12 +229,15 @@ Setup:
    where Vercel looks for `dist`; if you see *"No Output Directory named
    dist found"*, the Root Directory is wrong). Framework Preset
    auto-detects from each `vercel.json`.
-2. Copy each client's production domain (e.g.
-   `https://orderbook-react.vercel.app`), then in the **landing** project
-   set the environment variables referenced by its rewrite config:
-   - `REACT_CLIENT_URL` — production domain of the react-client project
-   - `NUXT_CLIENT_URL` — production domain of the nuxt-client project
-3. Redeploy the landing project so the rewrites pick up the variables.
+2. Copy each client's production domain into the literal rewrite
+   destinations committed in `vercel.json` (repo-root project) and
+   `apps/landing/vercel.json` (`apps/landing` project) — whichever project
+   serves `/` uses the matching file. Destinations are committed as full
+   URLs instead of `${ENV_VAR}` references on purpose: Vercel does not
+   error on an unset variable in a rewrite destination (the reference
+   stays literal and the route 404s), so plain URLs remove that failure
+   mode.
+3. Redeploy the landing project so the new rewrites go live.
 
 No path-prefixed asset config is needed beyond what is committed: Nuxt serves
 `/nuxt/*` natively (`app.baseURL` is baked into the Nitro routes), while the

@@ -5,11 +5,11 @@
   "outputDirectory": "dist",
   "installCommand": "pnpm install",
   "rewrites": [
-    { "source": "/react", "destination": "${REACT_CLIENT_URL}/react/" },
-    { "source": "/react/", "destination": "${REACT_CLIENT_URL}/react/" },
-    { "source": "/react/:path*", "destination": "${REACT_CLIENT_URL}/react/:path*" },
-    { "source": "/nuxt", "destination": "${NUXT_CLIENT_URL}/nuxt/" },
-    { "source": "/nuxt/", "destination": "${NUXT_CLIENT_URL}/nuxt/" },
-    { "source": "/nuxt/:path*", "destination": "${NUXT_CLIENT_URL}/nuxt/:path*" }
+    { "source": "/react", "destination": "https://orderbook-render-engine-h5ip.vercel.app/react/" },
+    { "source": "/react/", "destination": "https://orderbook-render-engine-h5ip.vercel.app/react/" },
+    { "source": "/react/:path*", "destination": "https://orderbook-render-engine-h5ip.vercel.app/react/:path*" },
+    { "source": "/nuxt", "destination": "https://orderbook-render-engine-nuxt.vercel.app/nuxt/" },
+    { "source": "/nuxt/", "destination": "https://orderbook-render-engine-nuxt.vercel.app/nuxt/" },
+    { "source": "/nuxt/:path*", "destination": "https://orderbook-render-engine-nuxt.vercel.app/nuxt/:path*" }
   ]
 }
