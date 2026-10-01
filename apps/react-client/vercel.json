@@ -6,6 +6,7 @@
   "installCommand": "pnpm install",
   "rewrites": [
     { "source": "/react", "destination": "/" },
+    { "source": "/react/", "destination": "/" },
     { "source": "/react/:path*", "destination": "/:path*" }
   ]
 }
