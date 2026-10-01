@@ -25,6 +25,7 @@ export type {
 } from './orderbook/depth-diff'
 export { buildView, parseFrame, ROW_STRIDE, type BookView, type ParsedFrame } from './orderbook/frames'
 export { imbalanceFromTotals, pressureFromBidShare, type Imbalance } from './orderbook/imbalance'
+export { advanceSide, approach, smoothAlpha } from './orderbook/smoothing'
 export { SyntheticFeed } from './orderbook/synthetic'
 export type {
   BookSnapshot,

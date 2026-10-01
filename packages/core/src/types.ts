@@ -104,6 +104,13 @@ export interface OrderbookClientOptions {
   /** rendered rows per side, default 600 */
   rowLimit?: number
   /**
+   * Display smoothing time constant in ms: quantities, cumulative totals
+   * and mid/spread/imbalance glide exponentially toward each drain target
+   * (matched by price, frame-rate independent) so the tape animates
+   * smoothly instead of stepping. Default 150; 0 disables (raw steps).
+   */
+  smoothingMs?: number
+  /**
    * Bundler-friendly worker factory. Apps pass a one-line shim so the
    * bundler can resolve and bundle the worker entry:
    * `() => new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' })`

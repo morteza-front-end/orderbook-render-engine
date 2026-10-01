@@ -94,7 +94,7 @@ function SideList({ side, snapshot, selectedPrice, onSelect }: SideListProps) {
             <div
               key={row.p}
               data-testid="row"
-              className={`relative grid h-[22px] cursor-pointer grid-cols-3 items-center px-2 font-mono text-xs tabular-nums hover:bg-white/5${
+              className={`ob-row relative grid h-[22px] cursor-pointer grid-cols-3 items-center px-2 font-mono text-xs tabular-nums hover:bg-white/5${
                 selectedPrice === row.p ? ' ring-1 ring-inset ring-amber-400' : ''
               }`}
               style={{ '--flash-color': isAsk ? 'rgb(239 68 80 / 0.22)' : 'rgb(16 185 129 / 0.22)' } as CSSProperties}

@@ -15,6 +15,18 @@
   animation: ob-flash 240ms ease-out;
 }
 
+/* New price levels pop into the tape; a short opacity fade keeps the
+   windowed list feeling continuous without touching layout. */
+@keyframes ob-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.ob-row {
+  animation: ob-in 120ms ease-out;
+}
+
 .ob-scroll {
   contain: strict;
   overscroll-behavior: contain;

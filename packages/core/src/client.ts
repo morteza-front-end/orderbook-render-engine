@@ -1,6 +1,7 @@
 import * as Comlink from 'comlink'
 import { FeedConnection } from './feed-connection'
 import { ROW_STRIDE } from './orderbook/frames'
+import { advanceSide, approach, smoothAlpha } from './orderbook/smoothing'
 import { RingBuffer } from './ring-buffer'
 import type {
   BookSnapshot,
@@ -14,6 +15,7 @@ import type {
 
 const RING_CAPACITY = 512
 const STATS_INTERVAL_MS = 500
+const DEFAULT_SMOOTHING_MS = 150
 
 const EMPTY_SNAPSHOT: BookSnapshot = {
   version: 0,
@@ -38,6 +40,9 @@ const EMPTY_SNAPSHOT: BookSnapshot = {
  *                                             ▼
  *                              transferred Float64Arrays (zero copy)
  *                                             ▼
+ *                     display smoothing: values glide exponentially
+ *                     toward targets (matched by price, zero-alloc)
+ *                                             ▼
  *                     pooled row objects → NEW snapshot wrapper per frame
  *                                             ▼
  *                    listeners notified (max once per animation frame)
@@ -54,6 +59,7 @@ const EMPTY_SNAPSHOT: BookSnapshot = {
 export class OrderbookClient {
   private readonly rowLimit: number
   private readonly statsIntervalMs: number
+  private readonly smoothingMs: number
   private readonly ring = new RingBuffer<string>(RING_CAPACITY)
   private readonly listeners = new Set<() => void>()
   private abort = new AbortController()
@@ -89,9 +95,19 @@ export class OrderbookClient {
   private lastStatsAt = 0
   private started = false
 
-  // row pools: mutated in place so steady-state rendering allocates nothing
-  private readonly bidPool: PooledRow[] = []
-  private readonly askPool: PooledRow[] = []
+  // display rows: double-buffered so smoothing can read the previous
+  // frame while writing the next one — steady-state rendering allocates
+  // nothing (row objects are pooled and mutated in place)
+  private bidDisplay: PooledRow[] = []
+  private askDisplay: PooledRow[] = []
+  private bidSwap: PooledRow[] = []
+  private askSwap: PooledRow[] = []
+
+  // smoothed book metrics (mid/spread/imbalance glide like the rows)
+  private midDisplay = 0
+  private spreadDisplay = 0
+  private imbalanceDisplay = 0
+  private lastDrainAt = 0
 
   constructor(private readonly opts: OrderbookClientOptions) {
     this.symbol = opts.symbol ?? 'btcusdt'
@@ -99,6 +115,7 @@ export class OrderbookClient {
     this.ratePerSec = opts.ratePerSec ?? 10
     this.rowLimit = opts.rowLimit ?? 600
     this.statsIntervalMs = opts.statsIntervalMs ?? STATS_INTERVAL_MS
+    this.smoothingMs = opts.smoothingMs ?? DEFAULT_SMOOTHING_MS
   }
 
   // ----------------------------------------------------------------- public
@@ -147,6 +164,11 @@ export class OrderbookClient {
     this.connection?.close()
     this.ring.clear()
     this.snapshot = EMPTY_SNAPSHOT
+    // metrics must not glide across symbol/feed switches
+    this.midDisplay = 0
+    this.spreadDisplay = 0
+    this.imbalanceDisplay = 0
+    this.lastDrainAt = 0
     this.openConnection()
   }
 
@@ -224,22 +246,45 @@ export class OrderbookClient {
         this.opts.onStatus?.(res.status)
       }
 
+      const now = performance.now()
       if (!this.paused && (res.bids.length > 0 || res.asks.length > 0)) {
-        this.copyRows(res.bids, this.bidPool)
-        this.copyRows(res.asks, this.askPool)
+        // display smoothing: glide every value toward its drain target with
+        // a frame-rate-independent exponential approach (matched by price,
+        // double-buffered pools). `smoothingMs: 0` falls back to raw steps.
+        const alpha = smoothAlpha(now - this.lastDrainAt, this.smoothingMs)
+        this.lastDrainAt = now
+        if (this.smoothingMs > 0) {
+          advanceSide(res.bids, this.bidDisplay, this.bidSwap, alpha, true)
+          advanceSide(res.asks, this.askDisplay, this.askSwap, alpha, false)
+          // the just-written swap buffers become the displayed pools
+          const bidNext = this.bidSwap
+          this.bidSwap = this.bidDisplay
+          this.bidDisplay = bidNext
+          const askNext = this.askSwap
+          this.askSwap = this.askDisplay
+          this.askDisplay = askNext
+          this.midDisplay = approach(this.midDisplay, res.mid, alpha)
+          this.spreadDisplay = approach(this.spreadDisplay, res.spread, alpha)
+          this.imbalanceDisplay = approach(this.imbalanceDisplay, res.imbalance, alpha)
+        } else {
+          this.copyRows(res.bids, this.bidDisplay)
+          this.copyRows(res.asks, this.askDisplay)
+          this.midDisplay = res.mid
+          this.spreadDisplay = res.spread
+          this.imbalanceDisplay = res.imbalance
+        }
         // replace (never mutate) — the one write that can trigger a re-render
         this.snapshot = {
           version: ++this.version,
-          bids: this.bidPool,
-          asks: this.askPool,
-          mid: res.mid,
-          spread: res.spread,
-          imbalance: res.imbalance,
+          bids: this.bidDisplay,
+          asks: this.askDisplay,
+          mid: this.midDisplay,
+          spread: this.spreadDisplay,
+          imbalance: this.imbalanceDisplay,
         }
         for (const listener of this.listeners) listener()
       }
 
-      const now = performance.now()
       if (now - this.lastStatsAt >= this.statsIntervalMs) {
         this.lastStatsAt = now
         this.stats = {
